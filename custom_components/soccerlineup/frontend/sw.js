@@ -57,6 +57,17 @@ function tellPagesAboutUpdate(){
   });
 }
 
+/* One check at a time: the page's own "am I up to date?" question joins the
+   check that opening the app already started. */
+var refreshing = null;
+function refreshOnce(){
+  if(!refreshing){
+    refreshing = refreshAll().then(function(changed){ refreshing = null; return changed; },
+                                   function(){ refreshing = null; return false; });
+  }
+  return refreshing;
+}
+
 /* Check every app file against the web copy; resolves true if any changed. */
 function refreshAll(){
   return caches.open(CACHE).then(function(cache){
@@ -119,6 +130,35 @@ function servePage(){
   }).catch(function(){ return fetch(scopeUrl("index.html")); });
 }
 
+/* The fingerprints the page would get if it opened now. */
+function currentStamps(){
+  return caches.open(CACHE).then(function(cache){
+    return Promise.all([cache.match(scopeUrl("styles.css")), cache.match(scopeUrl("app.js"))]);
+  }).then(function(r){
+    return Promise.all([r[0] ? r[0].arrayBuffer() : new ArrayBuffer(0), r[1] ? r[1].arrayBuffer() : new ArrayBuffer(0)]);
+  }).then(function(b){ return {style: fingerprint(b[0]), script: fingerprint(b[1])}; });
+}
+function stampOf(address){
+  var m = /[?&]v=([^&]+)/.exec(address || "");
+  return m ? m[1] : null;
+}
+
+/* A page that has finished loading asks whether it is running the newest
+   version, sending the fingerprints in its own script and style addresses.
+   Asking (rather than only being told when the check finishes) means the
+   answer can't arrive before the page is ready to hear it. */
+self.addEventListener("message", function(ev){
+  var d = ev.data || {};
+  if(d.type !== "check" || !ev.source){ return; }
+  var mine = {script: stampOf(d.script), style: stampOf(d.style)};
+  if(!mine.script){ return; }   /* opened before this helper took charge: nothing to compare */
+  ev.waitUntil(refreshOnce().then(currentStamps).then(function(now){
+    if(now.script !== mine.script || now.style !== mine.style){
+      ev.source.postMessage({type: "updated"});
+    }
+  }).catch(function(){}));
+});
+
 self.addEventListener("fetch", function(ev){
   var req = ev.request;
   if(req.method !== "GET"){ return; }
@@ -130,7 +170,7 @@ self.addEventListener("fetch", function(ev){
     /* Opening the app is the moment to look for a new version. Every file
        is checked, not only the ones the page asks for, for the same
        in-memory reason described above servePage(). */
-    ev.waitUntil(refreshAll().then(function(changed){
+    ev.waitUntil(refreshOnce().then(function(changed){
       if(changed){ return tellPagesAboutUpdate(); }
     }));
     return;

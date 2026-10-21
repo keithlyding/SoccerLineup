@@ -1876,6 +1876,13 @@ function setupOffline(){
   });
   window.addEventListener("load",function(){
     navigator.serviceWorker.register("sw.js").catch(function(){});
+    /* ask whether this page is the newest version (see sw.js) */
+    navigator.serviceWorker.ready.then(function(){
+      var helper=navigator.serviceWorker.controller;
+      if(!helper){ return; }
+      var sc=document.querySelector('script[src^="app.js"]'), ln=document.querySelector('link[href^="styles.css"]');
+      helper.postMessage({type:"check", script:sc?sc.getAttribute("src"):"", style:ln?ln.getAttribute("href"):""});
+    }).catch(function(){});
   });
 }
 
