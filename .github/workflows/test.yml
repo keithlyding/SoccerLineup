@@ -64,5 +64,5 @@ jobs:
         with:
           category: integration
           # brands: the icon goes to the home-assistant/brands repository, not submitted yet.
-          # description, topics: repository settings on GitHub. license: the owner has not chosen one yet.
-          ignore: brands description topics license
+          # description, topics: repository settings on GitHub.
+          ignore: brands description topics

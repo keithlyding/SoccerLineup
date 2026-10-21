@@ -111,3 +111,7 @@ pip install pytest-homeassistant-custom-component home-assistant-frontend
 pytest                # the integration on Home Assistant
 npm run test:real-ha  # a real Home Assistant
 ```
+
+## License
+
+MIT, the same as Lyding Strike. See [LICENSE](LICENSE).
