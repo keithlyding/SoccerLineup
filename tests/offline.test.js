@@ -62,10 +62,19 @@ function assert(cond, msg) {
   server = await startServer(server.port, '\nwindow.__newVersion = true;\n');
   assert(await page.evaluate(() => document.getElementById('updateToast').hidden), 'no update notice before anything changes');
   await page.reload();
-  try {
-    await page.waitForSelector('#updateToast:not([hidden])', { timeout: 10000 });
-  } catch (e) {
-    // say what the offline helper saw, so a failure can be traced
+  // Two correct outcomes: usually the old copy opens and the notice offers a
+  // reload; if the update finished first (seen in WebKit), the page simply
+  // opens as the new version and there is nothing to reload.
+  let path = null;
+  for (let t = 0; t < 100 && !path; t++) {
+    const state = await page.evaluate(() => ({
+      notice: !document.getElementById('updateToast').hidden, isNew: window.__newVersion === true
+    })).catch(() => ({}));
+    if (state.isNew) path = 'opened as the new version';
+    else if (state.notice) path = 'notice';
+    else await page.waitForTimeout(100);
+  }
+  if (!path) {
     const seen = await page.evaluate(async () => {
       const keys = await caches.keys(), c = await caches.open(keys[0]);
       const saved = await c.match(new URL('app.js', location.href).href);
@@ -73,13 +82,17 @@ function assert(cond, msg) {
                savedHasNewVersion: saved ? (await saved.text()).includes('__newVersion') : 'no saved copy',
                scriptAddress: (document.querySelector('script[src^="app.js"]') || {}).src };
     }).catch(err => 'could not inspect: ' + err.message);
-    throw new Error('FAILED: no update notice. Offline helper state: ' + JSON.stringify(seen));
+    throw new Error('FAILED: neither the update notice nor the new version. Offline helper state: ' + JSON.stringify(seen));
   }
-  assert(true, 'a changed app file shows "A new version of the app is ready"');
-  await page.click('#updateToast button');
-  await page.waitForLoadState('load');
+  if (path === 'notice') {
+    assert(true, 'a changed app file shows "A new version of the app is ready"');
+    await page.click('#updateToast button');
+    await page.waitForLoadState('load');
+  } else {
+    assert(true, 'the update arrived before the page opened, so it opened as the new version');
+  }
   const running = await page.evaluate(() => window.__newVersion === true);
-  assert(running, 'after Reload the page is running the new version');
+  assert(running, 'the page is running the new version (' + path + ')');
   await page.waitForTimeout(500);
   assert(await page.evaluate(() => document.getElementById('updateToast').hidden), 'no second notice once up to date');
 
