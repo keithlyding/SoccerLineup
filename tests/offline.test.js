@@ -1,15 +1,11 @@
 // Offline tests for SoccerLineup. Serves the app from a small local web
 // server (the way GitHub Pages will), then turns the server off to prove the
 // app still opens, then serves a changed file to prove updates are noticed.
-// Run with: npm test
-const { chromium } = require('playwright');
-const http = require('http');
-const path = require('path');
-const fs = require('fs');
+// Run with: npm test            (desktop, Chromium)
+//           npm run test:iphone (iPhone screen and touch, WebKit = Safari's engine)
+const { startServer, browserSetup } = require('./server');
 
-const root = path.resolve(__dirname, '..');
-const TYPES = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript',
-  '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' };
+const setup = browserSetup();
 
 let passed = 0;
 function assert(cond, msg) {
@@ -17,33 +13,11 @@ function assert(cond, msg) {
   passed++; console.log('ok  ' + msg);
 }
 
-// Serves the repo under /SoccerLineup/ like GitHub Pages. `extra` is appended
-// to app.js so a test can pretend a new version was published.
-function startServer(port, extra) {
-  const sockets = new Set();
-  const server = http.createServer((req, res) => {
-    let url = decodeURIComponent(req.url.split('?')[0]);
-    if (!url.startsWith('/SoccerLineup/')) { res.writeHead(404); return res.end(); }
-    url = url.slice('/SoccerLineup/'.length) || 'index.html';
-    const file = path.join(root, url);
-    if (!file.startsWith(root) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); return res.end(); }
-    let body = fs.readFileSync(file);
-    if (url === 'app.js' && extra) { body = Buffer.concat([body, Buffer.from(extra)]); }
-    res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'max-age=600' });
-    res.end(body);
-  });
-  server.on('connection', s => { sockets.add(s); s.on('close', () => sockets.delete(s)); });
-  return new Promise(resolve => server.listen(port, '127.0.0.1', () => resolve({
-    port: server.address().port,
-    stop: () => new Promise(r => { sockets.forEach(s => s.destroy()); server.close(() => r()); })
-  })));
-}
-
 (async () => {
   let server = await startServer(0, '');
-  const base = 'http://127.0.0.1:' + server.port + '/SoccerLineup/';
-  const browser = await chromium.launch();
-  const context = await browser.newContext();
+  const base = server.base;
+  const browser = await setup.type.launch();
+  const context = await browser.newContext(setup.contextOptions);
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
@@ -100,5 +74,5 @@ function startServer(port, extra) {
   assert(errors.length === 0, 'no errors in the page' + (errors.length ? ': ' + errors.join(' | ') : ''));
   await browser.close();
   await server.stop();
-  console.log('\n' + passed + ' checks passed (offline)');
+  console.log('\n' + passed + ' checks passed (offline, ' + setup.label + ')');
 })().catch(e => { console.error(e.message || e); process.exit(1); });

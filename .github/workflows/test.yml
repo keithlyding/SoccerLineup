@@ -16,5 +16,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm test
+      - run: npx playwright install --with-deps chromium webkit
+      - name: Desktop (Chromium)
+        run: npm test
+      - name: iPhone screen and touch (WebKit, the engine Safari uses)
+        run: npm run test:iphone

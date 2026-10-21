@@ -3,7 +3,8 @@
   "private": true,
   "description": "Plan fair soccer lineups quarter by quarter.",
   "scripts": {
-    "test": "node tests/app.test.js && node tests/offline.test.js"
+    "test": "node tests/app.test.js && node tests/offline.test.js",
+    "test:iphone": "node tests/app.test.js --iphone && node tests/offline.test.js --iphone"
   },
   "devDependencies": {
     "playwright": "1.56.1"

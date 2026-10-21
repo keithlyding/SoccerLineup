@@ -66,11 +66,14 @@ full at the top of `app.js` are hand-placed and stay exactly as they are.
 
 ## Tests
 
-Every push runs the tests on GitHub (the **Actions** tab). To run them on a
-computer with Node.js installed:
+Every push runs the tests on GitHub (the **Actions** tab), once as a desktop
+browser and once as an iPhone (WebKit, the engine Safari uses, with an
+iPhone's screen size and touch). To run them on a computer with Node.js
+installed:
 
 ```sh
 npm install
-npx playwright install chromium
-npm test
+npx playwright install chromium webkit
+npm test              # desktop
+npm run test:iphone   # iPhone
 ```

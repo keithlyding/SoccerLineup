@@ -1,13 +1,14 @@
-// Feature tests for SoccerLineup. Opens index.html straight from disk in
-// headless Chromium and drives it the way a coach would.
-// Run with: npm test
-const { chromium } = require('playwright');
+// Feature tests for SoccerLineup. Serves the app the way GitHub Pages will
+// and drives it the way a coach would.
+// Run with: npm test            (desktop, Chromium)
+//           npm run test:iphone (iPhone screen and touch, WebKit = Safari's engine)
 const path = require('path');
 const fs = require('fs');
+const { startServer, browserSetup, root } = require('./server');
 
-const root = path.resolve(__dirname, '..');
-const file = 'file://' + path.join(root, 'index.html');
+const setup = browserSetup();
 const shots = process.env.SHOTS_DIR || '';
+const tag = setup.iphone ? 'iphone-' : '';
 
 let passed = 0;
 function assert(cond, msg) {
@@ -16,13 +17,15 @@ function assert(cond, msg) {
 }
 
 (async () => {
-  const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1200, height: 1000 }, acceptDownloads: true });
+  const server = await startServer(0, '');
+  const browser = await setup.type.launch();
+  const context = await browser.newContext(setup.contextOptions);
+  const page = await context.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 
-  await page.goto(file);
+  await page.goto(server.base);
   await page.evaluate(() => { localStorage.clear(); });
   await page.reload();
 
@@ -96,11 +99,29 @@ function assert(cond, msg) {
   assert(st.allBtnHidden === false, '"All quarters" button shows when quarters differ');
   assert(st.slotLabels === 'GK SW LB RB STP CM LF ST RF', 'pitch draws the 4-1-3 positions');
   assert(st.changes.indexOf('Formation change') >= 0 && st.changes.indexOf('Moved position') < 0, 'previous-quarter panel shows the formation change instead of every move');
-  if (shots) await page.screenshot({ path: path.join(shots, 'plan.png') });
+  if (shots) await page.screenshot({ path: path.join(shots, tag + 'plan.png') });
 
   await page.evaluate(() => autoFillQuarter());
   st = await page.evaluate(() => ({ n: S.current.plan[1].filter(x => x > 0).length, f: S.current.formations[1] }));
   assert(st.n === 9 && st.f === '4-1-3', 'auto-fill of quarter 2 keeps 4-1-3');
+
+  // tap a sitting player, then a spot: the way it is used on a phone
+  const press = sel => { const l = typeof sel === 'string' ? page.locator(sel) : sel; return setup.iphone ? l.tap() : l.click(); };
+  await page.evaluate(() => { const r = curRow(); r[4] = 0; save(); render(); });
+  const benchName = await page.evaluate(() => {
+    const row = curRow();
+    return presentRoster(G()).filter(p => row.indexOf(p.id) < 0).sort((a, b) => a.name.localeCompare(b.name))[0].name;
+  });
+  // phones show the sitting players above the pitch, wide screens beside it
+  await press(page.locator('#benchStrip .chip, #benchLeft .chip').filter({ visible: true }).first());
+  await press('#pitchSvg rect.slotbox[data-slot="4"]');
+  st = await page.evaluate(() => nameOf(curRow()[4], G()));
+  assert(st === benchName, (setup.iphone ? 'tapping' : 'clicking') + ' a sitting player then an empty spot puts her there');
+  await press('#pitchSvg rect.slotbox[data-slot="4"]');
+  await press('#pitchSvg rect.slotbox[data-slot="5"]');
+  st = await page.evaluate(() => nameOf(curRow()[5], G()));
+  assert(st === benchName, (setup.iphone ? 'tapping' : 'clicking') + ' two spots swaps those players');
+  await page.evaluate(() => { undoLastChange(); undoLastChange(); });   // the swap, then the placement
 
   await page.evaluate(() => { undoLastChange(); undoLastChange(); });
   st = await page.evaluate(() => ({ f: S.current.formations.slice(), changes: document.getElementById('prevChanges').textContent }));
@@ -192,14 +213,24 @@ function assert(cond, msg) {
   assert(st.cur.length === 4 && st.saved.every(f => f === st.savedForm), 'older saves get one formation per quarter');
   assert(st.auto === true, 'older saves get auto-backup turned on');
 
-  if (shots) { await page.evaluate(() => { showTab('season'); }); await page.screenshot({ path: path.join(shots, 'season.png'), fullPage: true }); }
-  await page.setViewportSize({ width: 390, height: 844 });
+  if (shots) { await page.evaluate(() => { showTab('season'); }); await page.screenshot({ path: path.join(shots, tag + 'season.png'), fullPage: true }); }
+  if (!setup.iphone) await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => { showTab('plan'); ui.q = 1; render(); });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
   assert(!overflow, 'no sideways scrolling at phone width');
-  if (shots) await page.screenshot({ path: path.join(shots, 'phone.png') });
+  if (shots) await page.screenshot({ path: path.join(shots, tag + 'phone.png') });
+
+  // a laptop can still open index.html straight from a folder
+  if (!setup.iphone) {
+    const local = await context.newPage();
+    await local.goto('file://' + path.join(root, 'index.html'));
+    const ok = await local.evaluate(() => typeof S === 'object' && document.querySelectorAll('#qtabs button').length > 0);
+    assert(ok, 'index.html opened straight from a folder still works');
+    await local.close();
+  }
 
   assert(errors.length === 0, 'no errors in the page' + (errors.length ? ': ' + errors.join(' | ') : ''));
   await browser.close();
-  console.log('\n' + passed + ' checks passed (app)');
+  await server.stop();
+  console.log('\n' + passed + ' checks passed (app, ' + setup.label + ')');
 })().catch(e => { console.error(e.message || e); process.exit(1); });
