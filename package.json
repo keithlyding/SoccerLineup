@@ -1,0 +1,11 @@
+{
+  "name": "soccerlineup",
+  "private": true,
+  "description": "Plan fair soccer lineups quarter by quarter.",
+  "scripts": {
+    "test": "node tests/app.test.js && node tests/offline.test.js"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}

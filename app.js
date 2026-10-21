@@ -1,401 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>SoccerLineup</title>
-<style>
-:root{
-  --ink:#13201B; --ink-soft:#4A5A53; --chalk:#FBFAF6; --line:#D6D9D2;
-  --pitch:#2F6B4F; --pitch-soft:#E4EDE7; --short:#B4560F; --over:#7A2E2E; --ok:#2F6B4F;
-}
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0}
-body{
-  background:var(--chalk);color:var(--ink);
-  font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
-  font-size:16px;line-height:1.45;padding:0 0 80px;
-  -webkit-user-select:none;user-select:none;
-}
-h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.02em}
-h2{font-size:16px}
-h3{font-size:12px;font-weight:700;color:var(--ink-soft)}
-
-.topbar{position:sticky;top:0;z-index:20;background:var(--ink);display:flex;align-items:stretch}
-.topbar .brand{
-  display:flex;flex-direction:column;justify-content:center;padding:0 9px;color:var(--chalk);
-  font-size:12px;font-weight:800;line-height:1.15;border-right:1px solid #2A3B34;white-space:nowrap;
-}
-.topbar .brand .sub{font-size:9px;font-weight:600;color:#8FA49B}
-.topbar nav{display:flex;flex:1}
-.topbar nav button{
-  flex:1;appearance:none;border:0;cursor:pointer;background:var(--ink);color:#9FB0A8;
-  font:inherit;font-weight:700;font-size:13px;padding:7px 2px;border-bottom:3px solid transparent;
-}
-.topbar nav button[aria-selected="true"]{color:var(--chalk);border-bottom-color:var(--pitch)}
-.topbar nav button:focus-visible{outline:2px solid var(--chalk);outline-offset:-3px}
-
-main{padding:12px;max-width:1440px;margin:0 auto}
-section[hidden]{display:none}
-.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
-.card[hidden]{display:none}
-.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.row[hidden]{display:none}
-.spread{justify-content:space-between}
-button.btn{
-  appearance:none;font:inherit;font-weight:700;cursor:pointer;
-  border:1px solid var(--ink);background:#fff;color:var(--ink);
-  border-radius:8px;padding:9px 13px;min-height:42px;
-}
-button.btn.primary{background:var(--ink);color:var(--chalk)}
-button.btn.green{background:var(--pitch);border-color:var(--pitch);color:#fff}
-button.btn.quiet{border-color:var(--line);color:var(--ink-soft);font-weight:600}
-button.btn.sm{min-height:36px;padding:6px 11px;font-size:13px}
-button.btn:focus-visible{outline:3px solid var(--pitch);outline-offset:2px}
-button.btn:disabled{opacity:.42;cursor:not-allowed}
-input,select{
-  font:inherit;padding:8px 9px;border:1px solid var(--line);border-radius:8px;
-  background:#fff;color:var(--ink);min-height:42px;-webkit-user-select:text;user-select:text;
-}
-input[type=number]{width:78px}
-label.field{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:700;color:var(--ink-soft)}
-select.qform{min-height:36px;padding:4px 8px;font-size:13px;font-weight:800}
-
-.banner{
-  background:#FFF4E2;border:1px solid var(--short);color:var(--short);
-  border-radius:8px;padding:9px 11px;font-size:13px;font-weight:700;margin-bottom:12px;
-  display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;
-}
-.banner[hidden]{display:none}
-
-.qtabs{display:flex;gap:5px;margin-bottom:10px}
-.qtabs button{
-  flex:1;appearance:none;font:inherit;font-weight:800;cursor:pointer;
-  border:1px solid var(--line);background:#fff;color:var(--ink-soft);
-  border-radius:8px;padding:9px 2px;min-height:44px;
-}
-.qtabs button[aria-selected="true"]{background:var(--pitch);border-color:var(--pitch);color:#fff}
-.qtabs button .qf{display:block;font-size:10px;font-weight:600;opacity:.8;letter-spacing:0}
-
-.scen{display:flex;gap:5px;margin-bottom:10px}
-.scen[hidden]{display:none}
-.scen button{
-  flex:1;appearance:none;font:inherit;font-weight:800;font-size:13px;cursor:pointer;
-  border:2px solid var(--line);background:#fff;color:var(--ink-soft);
-  border-radius:8px;padding:9px 4px;min-height:44px;
-}
-.scen button[aria-selected="true"]{border-color:var(--ink);background:var(--ink);color:#fff}
-
-/* field + flanking bench */
-.fieldgrid{display:grid;grid-template-columns:1fr;gap:8px;align-items:start}
-@media(min-width:760px){
-  .fieldgrid{grid-template-columns:minmax(120px,1fr) minmax(300px,420px) minmax(120px,1fr)}
-  /* pin every child to its own column so hiding the reference panel does not
-     let the bench and pitch slide into the wrong columns */
-  #benchLeft{grid-column:1}
-  .fieldgrid .pitchwrap{grid-column:2}
-  #benchRight{grid-column:3}
-  #prevWrap{grid-column:1 / -1;order:9}
-  #prevBody{grid-template-columns:minmax(0,190px) minmax(0,1fr)}
-  .benchcol{display:flex;flex-direction:column;gap:6px}
-  .benchcol .chip{width:100%;justify-content:center;text-align:center}
-  .benchstrip{display:none}
-}
-@media(min-width:1180px){
-  /* reference sits beside the working pitch so it stays visible while dragging.
-     Columns are assigned explicitly: on Q1 the reference is hidden and its
-     column simply sits empty rather than everything shifting left. */
-  .fieldgrid{grid-template-columns:260px minmax(110px,1fr) minmax(300px,430px) minmax(110px,1fr)}
-  #prevWrap{grid-column:1;grid-row:1;order:0;position:sticky;top:64px;align-self:start}
-  #benchLeft{grid-column:2;grid-row:1}
-  .fieldgrid .pitchwrap{grid-column:3;grid-row:1}
-  #benchRight{grid-column:4;grid-row:1}
-  #prevBody{grid-template-columns:1fr}
-  .prevchanges{font-size:12px}
-}
-@media(max-width:759px){
-  .benchcol{display:none}
-}
-.benchstrip{margin-bottom:8px}
-.benchhdr{font-size:11px;font-weight:800;color:var(--ink-soft);margin-bottom:4px}
-
-#prevWrap{border:1px solid var(--line);border-radius:10px;background:#F6F7F5;padding:8px;min-width:0}
-.prevhdr{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;font-weight:800;color:var(--ink-soft)}
-#prevBody{display:grid;grid-template-columns:minmax(0,190px) minmax(0,1fr);gap:10px;align-items:start;margin-top:8px}
-@media(max-width:600px){ #prevBody{grid-template-columns:1fr} }
-.prevpitch svg{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:6px;background:#fff}
-.prevchanges{font-size:13px;line-height:1.5}
-.prevchanges b{font-size:11px;color:var(--ink-soft);display:block;margin-bottom:2px}
-.prevchanges .on{color:var(--ok);font-weight:700}
-.prevchanges .off{color:var(--short);font-weight:700}
-.prevchanges .same{color:var(--ink-soft)}
-.pitchwrap{background:var(--pitch-soft);border-radius:10px;padding:6px;touch-action:none}
-svg.pitch{display:block;width:100%;height:auto;touch-action:none}
-.slotbox{fill:#fff;stroke:var(--pitch);stroke-width:1.5;cursor:grab}
-.slotbox.empty{fill:#fff;stroke-dasharray:4 3;stroke:#9AAFA3}
-.slotbox.sel{fill:#FFF4E2;stroke:var(--short);stroke-width:3}
-.slotbox.hot{fill:#E2F0E8;stroke:var(--short);stroke-width:3}
-.slotnum{font-size:9px;font-weight:700;fill:var(--ink-soft)}
-.slotname{font-size:11px;font-weight:800;fill:var(--ink);text-anchor:middle;pointer-events:none}
-.slotpos{font-size:8px;font-weight:700;fill:var(--ink-soft);text-anchor:middle;pointer-events:none}
-.slotbox.tier1{fill:#F2F8F4}
-.slotbox.tier3{fill:#FFFBF3}
-
-.chips{display:flex;flex-wrap:wrap;gap:6px;touch-action:none}
-.chip{
-  appearance:none;font:inherit;font-weight:700;font-size:14px;cursor:grab;
-  border:1px solid var(--line);background:#fff;color:var(--ink);
-  border-radius:999px;padding:8px 12px;min-height:40px;touch-action:none;
-}
-.chip.sel{background:#FFF4E2;border-color:var(--short);border-width:2px}
-.chip.t1{border-left:5px solid var(--pitch)}
-.chip.t3{border-left:5px solid #C99A4E}
-.chip .n{color:var(--ink-soft);font-weight:600;margin-right:4px}
-.chip.out{opacity:.45;text-decoration:line-through;border-style:dashed}
-.chip .gkmark{font-size:10px;color:var(--pitch);font-weight:800;margin-left:4px}
-
-#ghost{
-  position:fixed;z-index:999;pointer-events:none;display:none;
-  background:var(--ink);color:#fff;font-weight:800;font-size:14px;
-  padding:8px 13px;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.35);
-  transform:translate(-50%,-140%);
-}
-
-table{width:100%;border-collapse:collapse;font-size:14px}
-th,td{padding:7px 5px;text-align:left;border-bottom:1px solid var(--line)}
-th{font-size:11px;color:var(--ink-soft);font-weight:700;line-height:1.25;vertical-align:bottom}
-td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
-#seasonTable th,#seasonTable td{text-align:center}
-#gameList th.num,#gameList td.num{text-align:center}
-#seasonTable,#gameList,#rosterList,#planSits{overflow-x:auto;-webkit-overflow-scrolling:touch}
-tr.short td{background:#FFF6EC}
-tr.over td{background:#FBEFEF}
-.tag{font-size:11px;font-weight:800;padding:2px 6px;border-radius:4px}
-.tag.short{background:#FBE6CE;color:var(--short)}
-.tag.over{background:#F3DCDC;color:var(--over)}
-.tag.ok{background:#DCEAE1;color:var(--ok)}
-
-.hint{font-size:12px;color:var(--ink-soft);margin:6px 0 0}
-.warn{font-size:13px;color:var(--short);font-weight:700;margin:4px 0 0}
-
-/* print sheet */
-#printSheet{display:none}
-.print-page{break-after:page;page-break-after:always;break-inside:avoid;page-break-inside:avoid;overflow:hidden}
-.print-page:last-child{break-after:auto;page-break-after:auto}
-.psheet-head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #000;padding-bottom:3pt;margin-bottom:6pt}
-.psheet-head h1{font-size:14pt}
-.psheet-head .sub{font-size:9pt;font-weight:700}
-.pquarter-title{margin:0 0 6pt;border:3px solid #000;padding:4pt;text-align:center;font-size:24pt;font-weight:900;line-height:1;letter-spacing:.08em}
-.pquarter-instruction{text-align:center;font-size:9pt;font-weight:800;margin:-2pt 0 5pt}
-.ppage-body{display:grid;grid-template-columns:minmax(0,1fr) 180pt;gap:8pt;align-items:start}
-.pmain{min-width:0}
-.pfield-single svg{display:block;width:auto;height:6.15in;max-width:100%;margin:0 auto}
-.q4grid{display:grid;grid-template-columns:1fr 1fr;gap:6pt}
-.q4choice{border:2px solid #000;padding:3pt;break-inside:avoid}
-.q4choice h4{margin:0 0 3pt;padding:3pt 2pt;border-bottom:2px solid #000;text-align:center;font-size:14pt;font-weight:900;line-height:1;letter-spacing:.03em}
-.q4choice svg{display:block;width:100%;height:auto}
-.choicebox{display:inline-block;width:12pt;height:12pt;border:2px solid #000;vertical-align:-2pt;margin-right:4pt}
-.pside{min-width:0;break-inside:avoid}
-.pnotes{font-size:8pt;margin-top:6pt;border:1px solid #000;padding:3pt 4pt;line-height:1.3;break-inside:avoid;max-height:1.9in;overflow:hidden;word-wrap:break-word}
-.pnotes .pline{border-bottom:1px solid #999;height:11pt;margin-top:3pt}
-.psit{font-size:9pt;margin-top:3pt;line-height:1.3}
-.psummary{border:2px solid #000;padding:4pt;break-inside:avoid}
-.psummary h3{margin:0 0 2pt;text-align:center;font-size:12pt;font-weight:900;letter-spacing:.04em}
-.psummary-sub{text-align:center;font-size:7.5pt;font-weight:700;margin-bottom:3pt}
-.psummary table{font-size:8pt}
-.psummary th,.psummary td{padding:2pt;border-bottom:.5pt solid #777}
-.psummary th{text-align:center;color:#000;font-size:7.5pt;vertical-align:middle}
-.psummary td:first-child{text-align:left;font-weight:700}
-.psummary td.num{text-align:center;font-weight:800}
-.psummary .outmark{text-align:center;font-weight:800;letter-spacing:.04em}
-.psummary-note{font-size:7pt;line-height:1.2;margin-top:3pt}
-
-@media(max-width:600px){
-  main{padding:8px}
-  .card{padding:10px}
-  #seasonTable table{min-width:650px}
-  #gameList table{min-width:650px}
-  #rosterList table{min-width:760px}
-  #planSits table{min-width:540px}
-}
-
-
-@media print{
-  @page{margin:8mm;size:landscape}
-  body{background:#fff;padding:0;font-size:10pt}
-  .topbar,main{display:none !important}
-  #printSheet{display:block !important}
-}
-</style>
-</head>
-<body>
-
-<div class="topbar">
-  <div class="brand"><span id="brandTop">Team</span><span class="sub" id="brandSub"></span></div>
-  <nav role="tablist">
-    <button role="tab" id="tab-plan" aria-selected="true" onclick="showTab('plan')">Plan</button>
-    <button role="tab" id="tab-season" aria-selected="false" onclick="showTab('season')">Season</button>
-    <button role="tab" id="tab-setup" aria-selected="false" onclick="showTab('setup')">Setup</button>
-  </nav>
-</div>
-
-<div id="ghost"></div>
-<div id="printSheet"></div>
-
-<main>
-
-<section id="plan">
-  <div class="banner" id="editBanner" hidden></div>
-
-  <div class="card">
-    <div class="row">
-      <label class="field" style="flex:1;min-width:150px">Opponent
-        <input id="fOpp" placeholder="Wolfe" onchange="setGameField('opp',this.value)"></label>
-      <label class="field">Date
-        <input type="date" id="fDate" onchange="setGameField('date',this.value)"></label>
-    </div>
-    <p class="hint" id="gameStatus"></p>
-    <h3 style="margin-top:10px">Who is here today -- click on players to mark absent</h3>
-    <div class="chips" id="availChips"></div>
-    <p class="hint">Tap a name to mark her out for this game. Missed games do not count against her playing time.</p>
-  </div>
-
-  <div class="qtabs" id="qtabs"></div>
-
-  <div class="card">
-    <div class="row spread" style="margin-bottom:8px">
-      <h2 id="pitchTitle">Quarter 1</h2>
-      <div class="row">
-        <select id="qFormation" class="qform" aria-label="Formation for this quarter" onchange="setQuarterFormation(this.value)"></select>
-        <button class="btn sm quiet" id="allFormBtn" onclick="useFormationForAllQuarters()" title="Use this quarter's formation for every quarter" hidden>All quarters</button>
-        <button class="btn sm green" onclick="autoFillQuarter()">Auto-fill</button>
-        <button class="btn sm quiet" onclick="clearQuarter()">Clear</button>
-        <button class="btn sm quiet undoBtn" onclick="undoLastChange()" disabled>Undo</button>
-      </div>
-    </div>
-
-    <div class="benchstrip">
-      <div class="benchhdr" id="benchHdr">Sitting</div>
-      <div class="chips" id="benchStrip"></div>
-    </div>
-
-    <div class="fieldgrid">
-      <div id="prevWrap" hidden>
-        <div class="prevhdr">
-          <span id="prevTitle">Previous period</span>
-          <button class="btn sm quiet" id="prevToggle" onclick="togglePrev()">Hide</button>
-        </div>
-        <div id="prevBody">
-          <div class="prevpitch"><div id="prevPitch"></div></div>
-          <div class="prevchanges" id="prevChanges"></div>
-        </div>
-      </div>
-      <div class="benchcol" id="benchLeft"></div>
-      <div class="pitchwrap"><svg class="pitch" id="pitchSvg" viewBox="0 0 320 400" role="img" aria-label="Half pitch lineup"></svg></div>
-      <div class="benchcol" id="benchRight"></div>
-    </div>
-
-    <p class="hint">Drag a player onto a position, or tap one then the other. The menu above picks this quarter's formation; players already placed move to the closest positions.</p>
-    <p class="warn" id="planWarn"></p>
-
-  </div>
-
-  <div class="card">
-    <div class="row spread">
-      <h2>Goals <span class="hint" id="goalQLabel" style="margin:0"></span></h2>
-      <label class="field">Opponent goals
-        <input type="number" id="fOppGoals" min="0" inputmode="numeric" placeholder="—" style="width:88px" onchange="setOpponentGoals(this.value)">
-      </label>
-    </div>
-    <div id="goalEntry"></div>
-    <p class="hint" id="goalTotalLine"></p>
-  </div>
-
-  <div class="card">
-    <h2>Notes</h2>
-    <textarea id="fNotes" rows="4" placeholder="Reminders for this game — who to watch, what to work on, what happened."
-      style="width:100%;font:inherit;padding:9px;border:1px solid var(--line);border-radius:8px;resize:vertical"
-      onchange="setGameField('notes',this.value)"></textarea>
-    <p class="hint">Prints on every quarter page.</p>
-  </div>
-
-  <div class="card">
-    <h2>Quarters played</h2>
-    <div id="planSits"></div>
-  </div>
-
-  <div class="card">
-    <div class="row">
-      <button class="btn primary" onclick="window.print()">Print</button>
-      <button class="btn" onclick="autoFillAll()">Auto-fill whole game</button>
-      <button class="btn quiet" onclick="clearPlan()">Clear whole game</button>
-      <button class="btn quiet undoBtn" onclick="undoLastChange()" disabled>Undo</button>
-    </div>
-    
-    <div class="row" style="margin-top:8px">
-      <button class="btn green" id="archiveBtn" onclick="archiveGame()">Save game to season</button>
-      <button class="btn quiet" id="doneEditBtn" onclick="stopEditing()" hidden>Back to next game</button>
-    </div>
-    <p class="hint" id="saveHint"></p>
-  </div>
-</section>
-
-<section id="season" hidden>
-  <div class="card">
-    <h2>Season totals</h2>
-    <p class="hint" id="seasonMeta"></p>
-    <div id="seasonTable"></div>
-  </div>
-  <div class="card">
-    <h2>Games</h2>
-    <div id="gameList"></div>
-  </div>
-  <div class="card">
-    <h2>Backup and transfer</h2>
-    <div class="row">
-      <button class="btn" onclick="exportData()">Download backup</button>
-      <button class="btn" onclick="document.getElementById('importFile').click()">Restore from backup</button>
-      <input type="file" id="importFile" accept=".json" hidden onchange="importData(event)">
-    </div>
-    <p class="hint">The downloaded JSON file contains your team setup, roster, player settings, attendance, current lineup, saved games, and goals. You can restore it in SoccerLineup on another browser or device, or after this browser's stored data has been cleared. Restoring replaces the SoccerLineup data currently stored in that browser.</p>
-  </div>
-</section>
-
-<section id="setup" hidden>
-  <div class="card">
-    <h2>Match format</h2>
-    <div class="row" style="margin-top:6px">
-      <label class="field">Team<input id="cfgTeam" onchange="saveCfg()"></label>
-      <label class="field">Players on field<select id="cfgSize" onchange="setFieldSize(this.value)"></select></label>
-      <label class="field">Default formation<select id="cfgFormation" onchange="setDefaultFormation(this.value)"></select></label>
-      <label class="field">Quarters<input type="number" id="cfgQ" min="2" max="4" onchange="saveCfg()"></label>
-      <label class="field">Minutes<input type="number" id="cfgMin" min="5" max="45" onchange="saveCfg()"></label>
-    </div>
-    <p class="hint">Changing the number of players on the field clears the game you're currently planning, since the positions change. The default formation is what every new game starts with; each quarter can use a different formation from the menu on the Plan tab.</p>
-  </div>
-
-  <div class="card">
-    <h2>Roster</h2>
-    <div id="rosterList"></div>
-    <div class="row" style="margin-top:8px">
-      <input id="newName" placeholder="Name" style="flex:1;min-width:110px">
-      <input id="newNum" placeholder="#" style="width:66px">
-      <button class="btn" onclick="addPlayer()">Add player</button>
-    </div>
-    <p class="hint">Tier and positions drive auto-fill only. An unset tier is treated neutrally until assigned. Set goalkeeper priority after assigning Goalie as a primary or secondary position. None of these labels are printed on anything a parent sees.</p>
-  </div>
-
-  <div class="card">
-    <h2>Reset</h2>
-    <button class="btn quiet" onclick="resetSeason()">Clear all saved games</button>
-  </div>
-</section>
-
-</main>
-
-<script>
 "use strict";
 
+/* Formations. The ones written out by hand below keep their hand-tuned
+   layouts. Everything else is built from its name by buildFormation(), so
+   adding a new one is a single line further down: addFormation("4-3-1"). */
 var FORMATIONS = {
   "3-3-2": {n:9, pos:[
     {k:"GK",z:"G",imp:0.70,x:160,y:352},
@@ -436,25 +43,64 @@ var FORMATIONS = {
     {k:"LM",z:"M",imp:0.55,x:58,y:190},{k:"CM",z:"M",imp:0.88,x:160,y:196},{k:"RM",z:"M",imp:0.55,x:262,y:190},
     {k:"LF",z:"F",imp:0.80,x:108,y:78},{k:"RF",z:"F",imp:0.80,x:212,y:78}
   ]},
-  "3-3-1": {n:8, pos:[
-    {k:"GK",z:"G",imp:0.70,x:160,y:352},
-    {k:"LB",z:"D",imp:0.45,x:62,y:276},{k:"CB",z:"D",imp:0.80,x:160,y:290},{k:"RB",z:"D",imp:0.45,x:258,y:276},
-    {k:"LM",z:"M",imp:0.58,x:62,y:182},{k:"CM",z:"M",imp:0.90,x:160,y:194},{k:"RM",z:"M",imp:0.58,x:258,y:182},
-    {k:"ST",z:"F",imp:0.90,x:160,y:72}
-  ]},
   "3-2-1": {n:7, pos:[
     {k:"GK",z:"G",imp:0.70,x:160,y:352},
-    {k:"LB",z:"D",imp:0.50,x:70,y:278},{k:"CB",z:"D",imp:0.80,x:160,y:292},{k:"RB",z:"D",imp:0.50,x:250,y:278},
+    {k:"LB",z:"D",imp:0.50,x:62,y:278},{k:"CB",z:"D",imp:0.80,x:160,y:292},{k:"RB",z:"D",imp:0.50,x:258,y:278},
     {k:"LM",z:"M",imp:0.70,x:108,y:184},{k:"RM",z:"M",imp:0.70,x:212,y:184},
     {k:"ST",z:"F",imp:0.90,x:160,y:76}
-  ]},
-  "2-3-1": {n:7, pos:[
-    {k:"GK",z:"G",imp:0.70,x:160,y:352},
-    {k:"LB",z:"D",imp:0.65,x:106,y:284},{k:"RB",z:"D",imp:0.65,x:214,y:284},
-    {k:"LM",z:"M",imp:0.60,x:62,y:186},{k:"CM",z:"M",imp:0.90,x:160,y:196},{k:"RM",z:"M",imp:0.60,x:258,y:186},
-    {k:"ST",z:"F",imp:0.90,x:160,y:72}
   ]}
 };
+
+/* ---------- formations built from their name ----------
+   A name such as "3-3-1" lists the outfield lines from the back; the keeper
+   is added automatically. Two lines are defense and forwards, three add a
+   midfield, four split the midfield into a defensive and an attacking line.
+   Each line can hold 1 to 4 players. For every line size, LINE_SLOTS gives
+   the position names and how much each spot matters to auto-fill (imp). */
+var LINE_SLOTS={
+  D: {1:[["CB",0.85]], 2:[["LB",0.62],["RB",0.62]], 3:[["LB",0.45],["CB",0.80],["RB",0.45]],
+      4:[["LB",0.52],["LCB",0.78],["RCB",0.78],["RB",0.52]]},
+  MD:{1:[["DM",0.85]], 2:[["LDM",0.78],["RDM",0.78]], 3:[["LDM",0.55],["DM",0.85],["RDM",0.55]],
+      4:[["LWB",0.50],["LDM",0.75],["RDM",0.75],["RWB",0.50]]},
+  M: {1:[["CM",0.90]], 2:[["LM",0.70],["RM",0.70]], 3:[["LM",0.58],["CM",0.90],["RM",0.58]],
+      4:[["LM",0.52],["LCM",0.80],["RCM",0.80],["RM",0.52]]},
+  MA:{1:[["AM",0.82]], 2:[["LAM",0.70],["RAM",0.70]], 3:[["LAM",0.55],["AM",0.80],["RAM",0.55]],
+      4:[["LAM",0.50],["LCAM",0.75],["RCAM",0.75],["RAM",0.50]]},
+  F: {1:[["ST",0.90]], 2:[["LF",0.80],["RF",0.80]], 3:[["LW",0.55],["ST",0.90],["RW",0.55]],
+      4:[["LW",0.52],["LS",0.80],["RS",0.80],["RW",0.52]]}
+};
+var LINE_X={1:[160], 2:[106,214], 3:[62,160,258], 4:[50,112,208,270]};
+var LINE_ZONES={2:["D","F"], 3:["D","M","F"], 4:["D","MD","MA","F"]};
+function buildFormation(name){
+  var lines=String(name).split("-").map(Number), zones=LINE_ZONES[lines.length],
+      pos=[{k:"GK",z:"G",imp:0.70,x:160,y:352}], n=1, li, j;
+  if(!zones){ throw new Error("Formation "+name+" needs 2 to 4 lines"); }
+  for(li=0;li<lines.length;li++){
+    var count=lines[li], slots=LINE_SLOTS[zones[li]][count];
+    if(!slots){ throw new Error("Formation "+name+" can have 1 to 4 players in a line"); }
+    /* back line near the box, front line near halfway, the rest evenly between */
+    var y=284-li*(212/(lines.length-1));
+    for(j=0;j<count;j++){
+      var outer=(j===0 || j===count-1), dy=0;
+      if(count===3 && outer){ dy=-12; }        /* wide players sit a little higher */
+      if(count===4){ dy=outer?-18:18; }        /* stagger a flat four so printed name plates do not overlap */
+      pos.push({k:slots[j][0], z:zones[li], imp:slots[j][1], x:LINE_X[count][j], y:Math.round(y+dy)});
+    }
+    n+=count;
+  }
+  return {n:n, pos:pos};
+}
+function addFormation(name){ FORMATIONS[name]=buildFormation(name); }
+
+/* 9v9 */
+addFormation("3-4-1");
+addFormation("4-3-1");
+/* 8v8 */
+addFormation("3-3-1");
+addFormation("3-2-2");
+/* 7v7 */
+addFormation("2-3-1");
+addFormation("2-1-2-1");
 
 var ZONES=[
   {v:"G", label:"Goalie"},
@@ -499,7 +145,7 @@ function copyRoster(roster){
 function freshState(){
   var st={
     schemaVersion:7,
-    cfg:{team:"Team", quarters:4, minutes:15, onField:9, formation:"3-3-2"},
+    cfg:{team:"Team", quarters:4, minutes:15, onField:9, formation:"3-3-2", autoBackup:true},
     roster:copyRoster(DEFAULT_ROSTER), nextId:1, nextGameId:1,
     current:null, games:[]
   };
@@ -641,6 +287,7 @@ function normalizeState(st){
   S=st;
   S.schemaVersion=7;
   normalizeRoster(S.roster);
+  if(S.cfg.autoBackup===undefined){ S.cfg.autoBackup=true; }
   if(!formationsFor(S.cfg.onField).length){ S.cfg.onField=9; }
   if(!FORMATIONS[S.cfg.formation] || FORMATIONS[S.cfg.formation].n!==S.cfg.onField){
     S.cfg.formation=formationsFor(S.cfg.onField)[0];
@@ -1610,7 +1257,12 @@ function onDragEnd(){
 
 /* ---------- archive / edit ---------- */
 function archiveGame(){
-  if(ui.editId){ save(); alert("Changes saved."); return; }
+  if(ui.editId){
+    save();
+    if(S.cfg.autoBackup){ exportData(); }
+    alert("Changes saved."+(S.cfg.autoBackup?" A backup file was downloaded too.":""));
+    return;
+  }
   var g=S.current, qt=gameQtrs(g), total=0, i, roster=gameRoster(g);
   for(i=0;i<roster.length;i++){ total+=qt[roster[i].id]||0; }
   if(total===0){ alert("Nothing planned yet."); return; }
@@ -1620,7 +1272,10 @@ function archiveGame(){
   S.games.push(g);
   S.current=newGame();
   ui.q=0;
-  save(); showTab("season");
+  save();
+  if(S.cfg.autoBackup){ exportData(); }
+  askForPersistentStorage();
+  showTab("season");
 }
 function editGame(id){
   ui.editId=id; ui.q=0;
@@ -1696,14 +1351,54 @@ function saveCfg(){
   save(); render();
 }
 function exportData(){
+  S.lastBackupAt=new Date().toISOString();
+  save();
   var backup=JSON.parse(JSON.stringify(S));
-  backup.backupInfo={app:"SoccerLineup",formatVersion:1,exportedAt:new Date().toISOString()};
+  backup.backupInfo={app:"SoccerLineup",formatVersion:1,exportedAt:S.lastBackupAt};
   var blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json"});
-  var a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
+  var a=document.createElement("a"), url=URL.createObjectURL(blob);
+  a.href=url;
   var team=(S.cfg.team||"Team").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
   a.download=(team||"Team")+"-SoccerLineup-backup-"+todayISO()+".json";
-  a.click(); URL.revokeObjectURL(a.href);
+  document.body.appendChild(a);
+  a.click();
+  /* some browsers start the download after click() returns, so release the
+     file a little later rather than immediately */
+  setTimeout(function(){ URL.revokeObjectURL(url); if(a.parentNode){ a.parentNode.removeChild(a); } },4000);
+  renderBackupStatus();
+}
+function setAutoBackup(on){
+  S.cfg.autoBackup=!!on;
+  save(); render();
+}
+function renderBackupStatus(){
+  var el=document.getElementById("backupStatus"), box=document.getElementById("cfgAutoBackup");
+  if(box){ box.checked=!!S.cfg.autoBackup; }
+  if(!el){ return; }
+  var when=S.lastBackupAt?new Date(S.lastBackupAt):null, stale=false, text;
+  if(when && !isNaN(when.getTime())){
+    var days=Math.floor((Date.now()-when.getTime())/86400000);
+    text="Last backup from this browser: "+when.toLocaleDateString()+" at "+
+         when.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})+".";
+    stale=days>=14 && S.games.length>0;
+    if(stale){ text+=" That was "+days+" days ago, so download a fresh one."; }
+  }else{
+    text="No backup has been downloaded from this browser yet.";
+    stale=S.games.length>0;
+  }
+  el.textContent=text;
+  el.className=stale?"warn":"hint";
+}
+/* Ask the browser not to clear this app's data when space runs low. Most
+   browsers decide silently; Firefox may ask once. Asked after a game is
+   saved, so the question comes when there is something worth keeping. */
+function askForPersistentStorage(){
+  try{
+    if(!navigator.storage || !navigator.storage.persist || !navigator.storage.persisted){ return; }
+    navigator.storage.persisted().then(function(already){
+      if(!already){ return navigator.storage.persist(); }
+    }).catch(function(){});
+  }catch(e){}
 }
 function importData(ev){
   var f=ev.target.files[0]; if(!f){ return; }
@@ -1732,7 +1427,7 @@ function render(){
   document.getElementById("brandTop").textContent=S.cfg.team;
   document.getElementById("brandSub").textContent=S.cfg.onField+"v"+S.cfg.onField+" \u00b7 "+S.roster.length+" players";
   renderPlan(); renderSeason(); renderSetup(); renderPrint();
-  renderUndoButtons();
+  renderUndoButtons(); renderBackupStatus();
 }
 
 function numOf(id,g){ var p=id?P(id,g):null; return (p && p.num) ? String(p.num) : ""; }
@@ -1913,7 +1608,11 @@ function renderPlan(){
       var ch="";
       ch+='<div><b>Coming on</b>'+(cameOn.length?'<span class="on">'+esc(cameOn.join(", "))+'</span>':'<span class="same">nobody yet</span>')+'</div>';
       ch+='<div style="margin-top:8px"><b>Coming off</b>'+(cameOff.length?'<span class="off">'+esc(cameOff.join(", "))+'</span>':'<span class="same">nobody yet</span>')+'</div>';
-      if(stayed.length){
+      if(qFormName(g,ui.q-1)!==qFormName(g,ui.q)){
+        /* a new shape renames nearly every spot, so a list of moves is noise */
+        ch+='<div style="margin-top:8px"><b>Formation change</b><span class="same">'+
+            esc(qFormName(g,ui.q-1)+" \u2192 "+qFormName(g,ui.q))+'</span></div>';
+      }else if(stayed.length){
         ch+='<div style="margin-top:8px"><b>Moved position</b><span class="same">'+esc(stayed.join(", "))+'</span></div>';
       }
       document.getElementById("prevChanges").innerHTML=ch;
@@ -2123,8 +1822,23 @@ function renderPrint(){
   document.getElementById("printSheet").innerHTML=h;
 }
 
+/* ---------- offline app ----------
+   sw.js keeps a copy of the app on the device so it opens with no signal.
+   It only runs when the app is served from a web address (GitHub Pages),
+   not when index.html is opened straight from a folder. */
+function setupOffline(){
+  if(!("serviceWorker" in navigator) || !/^https?:$/.test(location.protocol)){ return; }
+  navigator.serviceWorker.addEventListener("message",function(ev){
+    if(ev.data && ev.data.type==="updated"){
+      var t=document.getElementById("updateToast");
+      if(t){ t.hidden=false; }
+    }
+  });
+  window.addEventListener("load",function(){
+    navigator.serviceWorker.register("sw.js").catch(function(){});
+  });
+}
+
 load();
 render();
-</script>
-</body>
-</html>
+setupOffline();

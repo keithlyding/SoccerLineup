@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>SoccerLineup</title>
+<meta name="theme-color" content="#13201B">
+<meta name="description" content="Plan fair soccer lineups quarter by quarter.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Lineup">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span id="brandTop">Team</span><span class="sub" id="brandSub"></span></div>
+  <nav role="tablist">
+    <button role="tab" id="tab-plan" aria-selected="true" onclick="showTab('plan')">Plan</button>
+    <button role="tab" id="tab-season" aria-selected="false" onclick="showTab('season')">Season</button>
+    <button role="tab" id="tab-setup" aria-selected="false" onclick="showTab('setup')">Setup</button>
+  </nav>
+</div>
+
+<div id="ghost"></div>
+<div class="toast" id="updateToast" role="status" hidden>
+  <span>A new version of the app is ready.</span>
+  <button class="btn sm green" onclick="location.reload()">Reload</button>
+</div>
+<div id="printSheet"></div>
+
+<main>
+
+<section id="plan">
+  <div class="banner" id="editBanner" hidden></div>
+
+  <div class="card">
+    <div class="row">
+      <label class="field" style="flex:1;min-width:150px">Opponent
+        <input id="fOpp" placeholder="Wolfe" onchange="setGameField('opp',this.value)"></label>
+      <label class="field">Date
+        <input type="date" id="fDate" onchange="setGameField('date',this.value)"></label>
+    </div>
+    <p class="hint" id="gameStatus"></p>
+    <h3 style="margin-top:10px">Who is here today -- click on players to mark absent</h3>
+    <div class="chips" id="availChips"></div>
+    <p class="hint">Tap a name to mark her out for this game. Missed games do not count against her playing time.</p>
+  </div>
+
+  <div class="qtabs" id="qtabs"></div>
+
+  <div class="card">
+    <div class="row spread" style="margin-bottom:8px">
+      <h2 id="pitchTitle">Quarter 1</h2>
+      <div class="row">
+        <select id="qFormation" class="qform" aria-label="Formation for this quarter" onchange="setQuarterFormation(this.value)"></select>
+        <button class="btn sm quiet" id="allFormBtn" onclick="useFormationForAllQuarters()" title="Use this quarter's formation for every quarter" hidden>All quarters</button>
+        <button class="btn sm green" onclick="autoFillQuarter()">Auto-fill</button>
+        <button class="btn sm quiet" onclick="clearQuarter()">Clear</button>
+        <button class="btn sm quiet undoBtn" onclick="undoLastChange()" disabled>Undo</button>
+      </div>
+    </div>
+
+    <div class="benchstrip">
+      <div class="benchhdr" id="benchHdr">Sitting</div>
+      <div class="chips" id="benchStrip"></div>
+    </div>
+
+    <div class="fieldgrid">
+      <div id="prevWrap" hidden>
+        <div class="prevhdr">
+          <span id="prevTitle">Previous period</span>
+          <button class="btn sm quiet" id="prevToggle" onclick="togglePrev()">Hide</button>
+        </div>
+        <div id="prevBody">
+          <div class="prevpitch"><div id="prevPitch"></div></div>
+          <div class="prevchanges" id="prevChanges"></div>
+        </div>
+      </div>
+      <div class="benchcol" id="benchLeft"></div>
+      <div class="pitchwrap"><svg class="pitch" id="pitchSvg" viewBox="0 0 320 400" role="img" aria-label="Half pitch lineup"></svg></div>
+      <div class="benchcol" id="benchRight"></div>
+    </div>
+
+    <p class="hint">Drag a player onto a position, or tap one then the other. The menu above picks this quarter's formation; players already placed move to the closest positions.</p>
+    <p class="warn" id="planWarn"></p>
+
+  </div>
+
+  <div class="card">
+    <div class="row spread">
+      <h2>Goals <span class="hint" id="goalQLabel" style="margin:0"></span></h2>
+      <label class="field">Opponent goals
+        <input type="number" id="fOppGoals" min="0" inputmode="numeric" placeholder="—" style="width:88px" onchange="setOpponentGoals(this.value)">
+      </label>
+    </div>
+    <div id="goalEntry"></div>
+    <p class="hint" id="goalTotalLine"></p>
+  </div>
+
+  <div class="card">
+    <h2>Notes</h2>
+    <textarea id="fNotes" rows="4" placeholder="Reminders for this game — who to watch, what to work on, what happened."
+      style="width:100%;font:inherit;padding:9px;border:1px solid var(--line);border-radius:8px;resize:vertical"
+      onchange="setGameField('notes',this.value)"></textarea>
+    <p class="hint">Prints on every quarter page.</p>
+  </div>
+
+  <div class="card">
+    <h2>Quarters played</h2>
+    <div id="planSits"></div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button class="btn primary" onclick="window.print()">Print</button>
+      <button class="btn" onclick="autoFillAll()">Auto-fill whole game</button>
+      <button class="btn quiet" onclick="clearPlan()">Clear whole game</button>
+      <button class="btn quiet undoBtn" onclick="undoLastChange()" disabled>Undo</button>
+    </div>
+    
+    <div class="row" style="margin-top:8px">
+      <button class="btn green" id="archiveBtn" onclick="archiveGame()">Save game to season</button>
+      <button class="btn quiet" id="doneEditBtn" onclick="stopEditing()" hidden>Back to next game</button>
+    </div>
+    <p class="hint" id="saveHint"></p>
+  </div>
+</section>
+
+<section id="season" hidden>
+  <div class="card">
+    <h2>Season totals</h2>
+    <p class="hint" id="seasonMeta"></p>
+    <div id="seasonTable"></div>
+  </div>
+  <div class="card">
+    <h2>Games</h2>
+    <div id="gameList"></div>
+  </div>
+  <div class="card">
+    <h2>Backup and transfer</h2>
+    <div class="row">
+      <button class="btn" onclick="exportData()">Download backup</button>
+      <button class="btn" onclick="document.getElementById('importFile').click()">Restore from backup</button>
+      <input type="file" id="importFile" accept=".json" hidden onchange="importData(event)">
+    </div>
+    <label class="check"><input type="checkbox" id="cfgAutoBackup" onchange="setAutoBackup(this.checked)"> Download a backup every time I save a game</label>
+    <p class="hint" id="backupStatus"></p>
+    <p class="hint">The downloaded JSON file contains your team setup, roster, player settings, attendance, current lineup, saved games, and goals. You can restore it in SoccerLineup on another browser or device, or after this browser's stored data has been cleared. Restoring replaces the SoccerLineup data currently stored in that browser.</p>
+  </div>
+</section>
+
+<section id="setup" hidden>
+  <div class="card">
+    <h2>Match format</h2>
+    <div class="row" style="margin-top:6px">
+      <label class="field">Team<input id="cfgTeam" onchange="saveCfg()"></label>
+      <label class="field">Players on field<select id="cfgSize" onchange="setFieldSize(this.value)"></select></label>
+      <label class="field">Default formation<select id="cfgFormation" onchange="setDefaultFormation(this.value)"></select></label>
+      <label class="field">Quarters<input type="number" id="cfgQ" min="2" max="4" onchange="saveCfg()"></label>
+      <label class="field">Minutes<input type="number" id="cfgMin" min="5" max="45" onchange="saveCfg()"></label>
+    </div>
+    <p class="hint">Changing the number of players on the field clears the game you're currently planning, since the positions change. The default formation is what every new game starts with; each quarter can use a different formation from the menu on the Plan tab.</p>
+  </div>
+
+  <div class="card">
+    <h2>Roster</h2>
+    <div id="rosterList"></div>
+    <div class="row" style="margin-top:8px">
+      <input id="newName" placeholder="Name" style="flex:1;min-width:110px">
+      <input id="newNum" placeholder="#" style="width:66px">
+      <button class="btn" onclick="addPlayer()">Add player</button>
+    </div>
+    <p class="hint">Tier and positions drive auto-fill only. An unset tier is treated neutrally until assigned. Set goalkeeper priority after assigning Goalie as a primary or secondary position. None of these labels are printed on anything a parent sees.</p>
+  </div>
+
+  <div class="card">
+    <h2>Reset</h2>
+    <button class="btn quiet" onclick="resetSeason()">Clear all saved games</button>
+  </div>
+</section>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
