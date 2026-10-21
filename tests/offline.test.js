@@ -15,7 +15,7 @@ function assert(cond, msg) {
 
 (async () => {
   let server = await startServer(0, '');
-  const base = server.base;
+  const base = server.app;
   const browser = await setup.type.launch();
   const context = await browser.newContext(setup.contextOptions);
   const page = await context.newPage();
@@ -42,7 +42,7 @@ function assert(cond, msg) {
   const cached = await page.evaluate(async () => {
     const keys = await caches.keys();
     const c = await caches.open(keys[0]);
-    return (await c.keys()).map(r => r.url.split('/SoccerLineup/')[1]).sort();
+    return (await c.keys()).map(r => r.url.split('/frontend/')[1]).sort();
   });
   assert(cached.join(',') === ['app.js','icons/apple-touch-icon.png','icons/icon-192.png','icons/icon-512.png','icons/icon-maskable-512.png','icons/icon.svg','index.html','manifest.webmanifest','styles.css'].sort().join(','), 'every app file is saved on the device');
 

@@ -1,0 +1,16 @@
+# A small Home Assistant used by run.sh to test SoccerLineup for real.
+homeassistant:
+  name: Test Home
+  time_zone: UTC
+  country: US
+  unit_system: us_customary
+  latitude: 39.7
+  longitude: -105.0
+  elevation: 1600
+frontend:
+config:
+recorder:
+  purge_keep_days: 1
+http:
+  server_host: 127.0.0.1
+  server_port: 8124

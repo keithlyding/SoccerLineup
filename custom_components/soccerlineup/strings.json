@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "SoccerLineup",
+        "description": "Adds Soccer Lineup to the sidebar. The season is kept on this Home Assistant server, so every phone and computer signed in here sees the same lineups, and Home Assistant's backups include it."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "SoccerLineup is already set up."
+    }
+  }
+}

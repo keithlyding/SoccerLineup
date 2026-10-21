@@ -3,10 +3,16 @@ name: Tests
 on:
   push:
   pull_request:
+  schedule:
+    - cron: "23 7 * * 1"   # weekly, to catch new Home Assistant releases
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  test:
+  browser:
+    name: App in the browser
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -21,3 +27,42 @@ jobs:
         run: npm test
       - name: iPhone screen and touch (WebKit, the engine Safari uses)
         run: npm run test:iphone
+
+  home-assistant:
+    name: Home Assistant
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: pip install pytest-homeassistant-custom-component home-assistant-frontend
+      - name: Integration on Home Assistant (pytest)
+        run: pytest -q -p no:logging
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Signed in to a real Home Assistant
+        run: npm run test:real-ha
+
+  hassfest:
+    name: Home Assistant's checks (hassfest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
+          # brands: the icon goes to the home-assistant/brands repository, not submitted yet.
+          # description, topics: repository settings on GitHub (see README).
+          ignore: brands description topics

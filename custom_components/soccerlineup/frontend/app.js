@@ -125,6 +125,35 @@ var DEFAULT_ROSTER = [];
 var KEY = "panthers.rotation.v5";
 var S = null;
 var ui = {tab:"plan", q:0, selSlot:-1, selPlayer:0, editId:0};
+
+/* ---------- Home Assistant mode ----------
+   Opened from the Soccer Lineup item in Home Assistant's sidebar, the app
+   keeps the season on the Home Assistant server instead of only in this
+   browser. The computer and the phone then see the same season, live, and
+   Home Assistant's own backups include it. This device still keeps a copy,
+   so a dropped connection loses nothing: changes made meanwhile are sent
+   when the connection comes back.
+   Opened any other way (a web address or a file), the app works as before
+   and nothing below runs. */
+var HA = detectHomeAssistant();
+var HA_CACHE = KEY + ".ha";
+var sync = {
+  rev:0,             /* the server version this device's season is based on */
+  pending:false,     /* changes here the server doesn't have yet */
+  inFlight:false, again:false, timer:0,
+  lastJson:null,     /* the season as the server has it, to skip saves that change nothing */
+  clientId:"c"+Math.random().toString(36).slice(2,10),
+  status:"", savedAt:null, savedBy:null, unsub:null, resolving:false
+};
+function detectHomeAssistant(){
+  try{
+    if(!/[?&]ha=1(&|$)/.test(location.search)){ return null; }
+    if(window.parent && window.parent!==window && window.parent.soccerLineupBridge){
+      return window.parent.soccerLineupBridge;
+    }
+  }catch(e){}
+  return null;
+}
 var undoStack = [];
 var suppressUndo = false;
 
@@ -311,6 +340,7 @@ function normalizeState(st){
 
 function load(){
   var raw=null;
+  if(HA){ haLoadCache(); return; }
   try{ raw=localStorage.getItem(KEY); }catch(e){ raw=null; }
   if(raw){
     try{ normalizeState(JSON.parse(raw)); }
@@ -319,6 +349,7 @@ function load(){
   if(!S){ freshState(); }
 }
 function save(){
+  if(HA){ sync.pending=true; haWriteCache(); haSchedulePush(); return; }
   try{ localStorage.setItem(KEY, JSON.stringify(S)); }
   catch(e){
     var b=document.getElementById("brandSub");
@@ -1259,6 +1290,7 @@ function onDragEnd(){
 function archiveGame(){
   if(ui.editId){
     save();
+    if(HA){ alert("Changes saved."); return; }
     if(S.cfg.autoBackup){ exportData(); }
     alert("Changes saved."+(S.cfg.autoBackup?" A backup file was downloaded too.":""));
     return;
@@ -1273,8 +1305,10 @@ function archiveGame(){
   S.current=newGame();
   ui.q=0;
   save();
-  if(S.cfg.autoBackup){ exportData(); }
-  askForPersistentStorage();
+  if(!HA){
+    if(S.cfg.autoBackup){ exportData(); }
+    askForPersistentStorage();
+  }
   showTab("season");
 }
 function editGame(id){
@@ -1375,6 +1409,7 @@ function renderBackupStatus(){
   var el=document.getElementById("backupStatus"), box=document.getElementById("cfgAutoBackup");
   if(box){ box.checked=!!S.cfg.autoBackup; }
   if(!el){ return; }
+  if(HA){ haRenderBackupStatus(el); return; }
   var when=S.lastBackupAt?new Date(S.lastBackupAt):null, stale=false, text;
   if(when && !isNaN(when.getTime())){
     var days=Math.floor((Date.now()-when.getTime())/86400000);
@@ -1402,7 +1437,9 @@ function askForPersistentStorage(){
 }
 function importData(ev){
   var f=ev.target.files[0]; if(!f){ return; }
-  if(!confirm("Restore this backup? It will replace the team, roster, current lineup, and saved games currently stored in this browser.")){
+  if(!confirm(HA ?
+      "Restore this backup? It will replace the season on Home Assistant for every device. The current season is kept under Earlier versions." :
+      "Restore this backup? It will replace the team, roster, current lineup, and saved games currently stored in this browser.")){
     ev.target.value="";
     return;
   }
@@ -1414,6 +1451,7 @@ function importData(ev){
       normalizeState(d);
       undoStack=[];
       ui.editId=0; ui.q=0;
+      if(HA){ sync.checkpoint="import"; }
       save(); render();
       alert("Backup restored successfully: "+S.cfg.team+", "+S.roster.length+" players, "+S.games.length+" saved game"+(S.games.length===1?"":"s")+".");
     }catch(e){ alert("That file isn't a backup from this tool."); }
@@ -1426,6 +1464,7 @@ function importData(ev){
 function render(){
   document.getElementById("brandTop").textContent=S.cfg.team;
   document.getElementById("brandSub").textContent=S.cfg.onField+"v"+S.cfg.onField+" \u00b7 "+S.roster.length+" players";
+  haRenderChrome();
   renderPlan(); renderSeason(); renderSetup(); renderPrint();
   renderUndoButtons(); renderBackupStatus();
 }
@@ -1827,6 +1866,7 @@ function renderPrint(){
    It only runs when the app is served from a web address (GitHub Pages),
    not when index.html is opened straight from a folder. */
 function setupOffline(){
+  if(HA){ return; }   /* Home Assistant serves the app; there is nothing to keep offline */
   if(!("serviceWorker" in navigator) || !/^https?:$/.test(location.protocol)){ return; }
   navigator.serviceWorker.addEventListener("message",function(ev){
     if(ev.data && ev.data.type==="updated"){
@@ -1839,6 +1879,226 @@ function setupOffline(){
   });
 }
 
+/* ---------- Home Assistant: keeping the season on the server ---------- */
+function haConn(){ return (HA && HA.hass) ? HA.hass.connection : null; }
+
+function haLoadCache(){
+  var raw=null, c=null;
+  try{ raw=localStorage.getItem(HA_CACHE); }catch(e){ raw=null; }
+  if(raw){
+    try{
+      c=JSON.parse(raw);
+      normalizeState(c.state);
+      sync.rev=Number(c.rev)||0;
+      sync.pending=!!c.pending;
+      sync.lastJson=sync.pending?null:JSON.stringify(S);
+    }catch(e){ S=null; }
+  }
+  if(!S){ freshState(); sync.rev=0; sync.pending=false; sync.lastJson=null; }
+}
+function haWriteCache(){
+  try{ localStorage.setItem(HA_CACHE, JSON.stringify({state:S, rev:sync.rev, pending:sync.pending})); }
+  catch(e){}
+}
+function haSchedulePush(delay){
+  if(sync.timer){ clearTimeout(sync.timer); }
+  sync.timer=setTimeout(haPush, delay===undefined?400:delay);
+}
+function haPush(force){
+  sync.timer=0;
+  var conn=haConn();
+  if(!conn){ haSetStatus("offline"); return; }
+  if(sync.inFlight){ sync.again=true; return; }
+  var json=JSON.stringify(S);
+  if(json===sync.lastJson && !force){
+    sync.pending=false; haWriteCache(); haSetStatus("saved"); return;
+  }
+  var msg={type:"soccerlineup/save", data:JSON.parse(json), base_rev:sync.rev, client_id:sync.clientId};
+  if(force){ msg.force=true; msg.checkpoint="kept this device"; }
+  else if(sync.checkpoint){ msg.checkpoint=sync.checkpoint; }
+  sync.checkpoint=null;
+  sync.inFlight=true;
+  haSetStatus("saving");
+  conn.sendMessagePromise(msg).then(function(res){
+    sync.inFlight=false;
+    sync.rev=res.rev; sync.lastJson=json; sync.savedAt=res.saved_at; sync.savedBy=null;
+    sync.pending=(JSON.stringify(S)!==json);
+    haWriteCache();
+    if(sync.pending || sync.again){ sync.again=false; haSchedulePush(0); }
+    else { haSetStatus("saved"); }
+    if(sync.skipped){
+      /* another change arrived during this save (a restore, say): fetch the latest */
+      sync.skipped=false;
+      conn.sendMessagePromise({type:"soccerlineup/get"}).then(function(latest){ haOnServer(latest); }, function(){});
+    }
+  }, function(err){
+    sync.inFlight=false;
+    if(err && err.code==="conflict"){ haConflict(); return; }
+    /* sent again when the connection comes back, or with the next change */
+    haSetStatus("offline");
+  });
+}
+
+/* the server sends the latest version on connecting and after every change */
+function haOnServer(ev){
+  if(!ev){ return; }
+  if(ev.client_id && ev.client_id===sync.clientId){
+    if(ev.rev>sync.rev){ sync.rev=ev.rev; }
+    return;
+  }
+  if(sync.inFlight || sync.resolving){ sync.skipped=true; return; }   /* the save under way decides; looked at again after */
+  if(!ev.data){
+    /* nothing on the server yet: this device's season becomes the first version */
+    sync.rev=0; sync.lastJson=null; sync.pending=true; haWriteCache(); haSchedulePush(0);
+    return;
+  }
+  if(ev.rev===sync.rev){
+    if(sync.pending){ haSchedulePush(0); } else { haSetStatus("saved", ev); }
+    return;
+  }
+  if(sync.pending){ haConflict(ev); return; }
+  haApplyRemote(ev);
+}
+
+function haApplyRemote(ev){
+  var keepQ=ui.q;
+  normalizeState(JSON.parse(JSON.stringify(ev.data)));
+  undoStack=[];
+  ui.selSlot=-1; ui.selPlayer=0;
+  ui.q=Math.min(keepQ, G().nq-1);
+  if(ui.q<0){ ui.q=0; }
+  sync.rev=ev.rev; sync.pending=false; sync.lastJson=JSON.stringify(S);
+  haWriteCache();
+  haSetStatus("saved", ev);
+  ui.haHistory=null;
+  render();
+}
+
+/* Both this device and another one changed the season since this one last
+   heard from the server. Ask which to keep; the other is kept in history. */
+function haConflict(ev){
+  var conn=haConn();
+  if(!conn || sync.resolving){ return; }
+  sync.resolving=true;
+  var got=ev ? Promise.resolve(ev) : conn.sendMessagePromise({type:"soccerlineup/get"});
+  got.then(function(server){
+    var who=server.saved_by?" by "+server.saved_by:"", when=server.saved_at?" on "+haWhen(server.saved_at):"";
+    var keepMine=confirm("This season was also changed on another device"+who+when+" while this one was offline.\n\n"+
+      "OK: keep this device's version.\nCancel: use the other version.\n\n"+
+      "Either way, the version you don't keep stays under Season, Earlier versions.");
+    sync.resolving=false;
+    if(keepMine){
+      sync.rev=server.rev;
+      haPush(true);
+    }else{
+      /* this device's version goes into history, the other one is used */
+      conn.sendMessagePromise({type:"soccerlineup/keep_version", data:JSON.parse(JSON.stringify(S))})
+        .then(function(){}, function(){})
+        .then(function(){ haApplyRemote(server); });
+    }
+  }, function(){ sync.resolving=false; haSetStatus("offline"); });
+}
+
+function haOnReady(){ haSetStatus(sync.pending?"saving":"saved"); if(sync.pending){ haSchedulePush(0); } }
+function haOnDisconnect(){ haSetStatus("offline"); }
+
+function haStart(){
+  var conn=haConn();
+  if(!conn){ setTimeout(haStart, 300); return; }
+  haSetStatus("connecting");
+  conn.subscribeMessage(haOnServer, {type:"soccerlineup/subscribe"}).then(function(unsub){
+    sync.unsub=unsub;
+  }, function(){ haSetStatus("offline"); });
+  conn.addEventListener("ready", haOnReady);
+  conn.addEventListener("disconnected", haOnDisconnect);
+  var stopChrome=HA.onChange(haRenderChrome);
+  window.addEventListener("pagehide", function(){
+    try{
+      /* the connection may already be closing; a refused unsubscribe is fine */
+      var done=sync.unsub ? sync.unsub() : null;
+      if(done && done.then){ done.then(function(){}, function(){}); }
+    }catch(e){}
+    try{ conn.removeEventListener("ready", haOnReady); conn.removeEventListener("disconnected", haOnDisconnect); }catch(e){}
+    stopChrome();
+  });
+}
+
+function haWhen(iso){
+  var d=new Date(iso);
+  if(isNaN(d.getTime())){ return ""; }
+  return d.toLocaleDateString()+" at "+d.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+}
+function haSetStatus(status, ev){
+  sync.status=status;
+  if(ev && ev.saved_at){ sync.savedAt=ev.saved_at; sync.savedBy=ev.saved_by||null; }
+  haRenderChrome();
+  var el=document.getElementById("backupStatus");
+  if(el && ui.tab==="season"){ haRenderBackupStatus(el); }
+}
+function haRenderChrome(){
+  if(!HA){ return; }
+  var menu=document.getElementById("haMenu"), st=document.getElementById("syncState");
+  if(menu){ menu.hidden=!HA.narrow; }
+  if(!st){ return; }
+  var text={connecting:"Connecting\u2026", saving:"Saving\u2026", saved:"Saved on Home Assistant",
+            offline:sync.pending?"Offline \u2014 changes will be sent":"Offline"}[sync.status]||"";
+  st.hidden=!text;
+  st.textContent=text;
+  st.className="sub sync"+(sync.status==="offline"?" offline":"");
+}
+function haToggleMenu(){ if(HA){ HA.toggleMenu(); } }
+
+function haRenderBackupStatus(el){
+  var row=document.getElementById("autoBackupRow"), hist=document.getElementById("haHistory");
+  if(row){ row.hidden=true; }
+  if(hist){ hist.hidden=false; }
+  var text="This season is kept on your Home Assistant server, so every device signed in there sees the same lineups, and Home Assistant's backups include it.";
+  if(sync.savedAt){ text+=" Last change: "+haWhen(sync.savedAt)+(sync.savedBy?" by "+sync.savedBy:"")+"."; }
+  if(sync.status==="offline"){ text+=sync.pending?" Not connected right now: changes made here will be sent when the connection is back.":" Not connected right now."; }
+  el.textContent=text;
+  el.className=(sync.status==="offline" && sync.pending)?"warn":"hint";
+  haRenderHistory();
+}
+function haShowHistory(){
+  var conn=haConn();
+  if(!conn){ return; }
+  conn.sendMessagePromise({type:"soccerlineup/history"}).then(function(res){
+    ui.haHistory=res.versions||[];
+    haRenderHistory();
+  }, function(){ ui.haHistory=[]; haRenderHistory(); });
+}
+function haRenderHistory(){
+  var box=document.getElementById("haHistoryList"), btn=document.getElementById("haHistoryBtn");
+  if(!box){ return; }
+  if(!ui.haHistory){ box.innerHTML=""; if(btn){ btn.hidden=false; } return; }
+  if(btn){ btn.hidden=true; }
+  if(!ui.haHistory.length){ box.innerHTML='<p class="hint">No earlier versions yet.</p>'; return; }
+  var reasons={"kept this device":"replaced by another device's version","before restore":"before a restore",
+               "import":"before a backup file was restored","not kept":"a device's changes that weren't kept"};
+  var h="", i, v;
+  for(i=0;i<ui.haHistory.length;i++){
+    v=ui.haHistory[i];
+    h+='<div class="histrow"><span class="when"><b>'+esc(haWhen(v.saved_at)||"Unknown time")+'</b>'+
+       (v.saved_by?' &middot; '+esc(v.saved_by):'')+' &middot; '+v.games+' saved game'+(v.games===1?'':'s')+
+       (reasons[v.reason]?' <span class="hint" style="margin:0">('+reasons[v.reason]+')</span>':'')+'</span>'+
+       '<button class="btn sm" onclick="haRestore(\''+esc(v.id)+'\')">Restore</button></div>';
+  }
+  h+='<p class="hint">A version is kept at most every 15 minutes, whenever a game is saved to the season, and whenever one version replaces another.</p>';
+  box.innerHTML=h;
+}
+function haRestore(versionId){
+  var conn=haConn(), v=null, i;
+  if(!conn){ return; }
+  for(i=0;i<(ui.haHistory||[]).length;i++){ if(ui.haHistory[i].id===versionId){ v=ui.haHistory[i]; } }
+  if(!confirm("Restore the version from "+(v?haWhen(v.saved_at):"earlier")+"?\n\nIt replaces the season on every device. The current season is kept as an earlier version.")){ return; }
+  if(sync.timer){ clearTimeout(sync.timer); sync.timer=0; }
+  sync.pending=false;
+  conn.sendMessagePromise({type:"soccerlineup/restore", version:versionId}).then(function(){
+    ui.haHistory=null;
+  }, function(err){ alert((err && err.message) || "That version could not be restored."); });
+}
+
 load();
 render();
 setupOffline();
+if(HA){ haStart(); }

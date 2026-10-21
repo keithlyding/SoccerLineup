@@ -6,6 +6,8 @@ const path = require('path');
 const fs = require('fs');
 
 const root = path.resolve(__dirname, '..');
+// where the app lives inside the repository (inside the Home Assistant integration, for HACS)
+const APP_DIR = 'custom_components/soccerlineup/frontend/';
 const TYPES = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript',
   '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' };
 
@@ -14,11 +16,12 @@ function startServer(port, extra) {
   const server = http.createServer((req, res) => {
     let url = decodeURIComponent(req.url.split('?')[0]);
     if (!url.startsWith('/SoccerLineup/')) { res.writeHead(404); return res.end(); }
-    url = url.slice('/SoccerLineup/'.length) || 'index.html';
+    url = url.slice('/SoccerLineup/'.length);
+    if (url === '' || url.endsWith('/')) { url += 'index.html'; }   // like GitHub Pages
     const file = path.join(root, url);
     if (!file.startsWith(root) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); return res.end(); }
     let body = fs.readFileSync(file);
-    if (url === 'app.js' && extra) { body = Buffer.concat([body, Buffer.from(extra)]); }
+    if (url === APP_DIR + 'app.js' && extra) { body = Buffer.concat([body, Buffer.from(extra)]); }
     res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'max-age=600' });
     res.end(body);
   });
@@ -26,6 +29,7 @@ function startServer(port, extra) {
   return new Promise(resolve => server.listen(port || 0, '127.0.0.1', () => resolve({
     port: server.address().port,
     base: 'http://127.0.0.1:' + server.address().port + '/SoccerLineup/',
+    app: 'http://127.0.0.1:' + server.address().port + '/SoccerLineup/' + APP_DIR,
     stop: () => new Promise(r => { sockets.forEach(s => s.destroy()); server.close(() => r()); })
   })));
 }
@@ -45,4 +49,4 @@ function browserSetup() {
   };
 }
 
-module.exports = { startServer, browserSetup, root };
+module.exports = { startServer, browserSetup, root, APP_DIR };

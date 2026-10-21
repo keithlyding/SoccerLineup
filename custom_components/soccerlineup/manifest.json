@@ -1,0 +1,21 @@
+{
+  "domain": "soccerlineup",
+  "name": "SoccerLineup",
+  "codeowners": [
+    "@keithlyding"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "frontend",
+    "http",
+    "panel_custom",
+    "websocket_api"
+  ],
+  "documentation": "https://github.com/keithlyding/SoccerLineup#readme",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/keithlyding/SoccerLineup/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "1.0.0"
+}

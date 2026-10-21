@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fake Home Assistant</title>
+<style>html,body{margin:0;height:100%}#main{height:100vh}</style>
+</head>
+<body>
+<!-- Stands in for Home Assistant's sidebar page in tests/ha.test.js: it
+     gives the real SoccerLineup panel a `hass` whose connection talks to the
+     test's fake server (window.fakeHA, provided by the test). -->
+<div id="main"></div>
+<script src="../custom_components/soccerlineup/frontend/soccerlineup-panel.js"></script>
+<script>
+  var params = new URLSearchParams(location.search);
+  var listeners = { ready: [], disconnected: [] };
+  var subs = {}, nextSub = 0;
+  window.OFFLINE = false;
+  window.menuToggles = 0;
+
+  function call(msg) {
+    return window.fakeHA(JSON.stringify(msg)).then(function (raw) {
+      var out = JSON.parse(raw);
+      if (out.error) { throw out.error; }
+      return out.result;
+    });
+  }
+  var connection = {
+    sendMessagePromise: function (msg) {
+      if (window.OFFLINE) { return Promise.reject({ code: "connection_lost", message: "Connection lost" }); }
+      return call(msg);
+    },
+    subscribeMessage: function (cb, msg) {
+      var id = ++nextSub;
+      subs[id] = { cb: cb, msg: msg };
+      var unsub = function () { delete subs[id]; call({ type: "unsubscribe", sub_id: id }); };
+      if (window.OFFLINE) { return Promise.resolve(unsub); }
+      return call(Object.assign({}, msg, { sub_id: id })).then(function () { return unsub; });
+    },
+    addEventListener: function (t, f) { (listeners[t] = listeners[t] || []).push(f); },
+    removeEventListener: function (t, f) { listeners[t] = (listeners[t] || []).filter(function (x) { return x !== f; }); }
+  };
+  window.deliver = function (id, ev) { if (!window.OFFLINE && subs[id]) { subs[id].cb(ev); } };
+  window.goOffline = function () {
+    window.OFFLINE = true;
+    call({ type: "offline" });
+    listeners.disconnected.forEach(function (f) { f(); });
+  };
+  window.goOnline = function () {
+    window.OFFLINE = false;
+    /* like Home Assistant's connection: subscriptions are renewed, then "ready" */
+    return call({ type: "online" }).then(function () {
+      return Promise.all(Object.keys(subs).map(function (id) {
+        return call(Object.assign({}, subs[id].msg, { sub_id: Number(id) }));
+      }));
+    }).then(function () { listeners.ready.forEach(function (f) { f(); }); });
+  };
+
+  var panel = document.createElement("soccerlineup-panel");
+  panel.addEventListener("hass-toggle-menu", function () { window.menuToggles++; });
+  panel.narrow = params.get("narrow") === "1";
+  panel.panel = { config: { app_url: "../custom_components/soccerlineup/frontend/index.html?ha=1" } };
+  panel.hass = { connection: connection, user: { name: params.get("who") || "Coach" } };
+  document.getElementById("main").appendChild(panel);
+</script>
+</body>
+</html>

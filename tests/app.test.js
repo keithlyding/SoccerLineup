@@ -4,7 +4,7 @@
 //           npm run test:iphone (iPhone screen and touch, WebKit = Safari's engine)
 const path = require('path');
 const fs = require('fs');
-const { startServer, browserSetup, root } = require('./server');
+const { startServer, browserSetup, root, APP_DIR } = require('./server');
 
 const setup = browserSetup();
 const shots = process.env.SHOTS_DIR || '';
@@ -25,7 +25,11 @@ function assert(cond, msg) {
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 
+  // the repository's front page forwards to the app
   await page.goto(server.base);
+  await page.waitForURL(/\/frontend\/index\.html$/);
+  assert(true, 'the front page forwards to the app');
+  await page.goto(server.app);
   await page.evaluate(() => { localStorage.clear(); });
   await page.reload();
 
@@ -224,6 +228,7 @@ function assert(cond, msg) {
   if (!setup.iphone) {
     const local = await context.newPage();
     await local.goto('file://' + path.join(root, 'index.html'));
+    await local.waitForURL(/\/frontend\/index\.html$/);
     const ok = await local.evaluate(() => typeof S === 'object' && document.querySelectorAll('#qtabs button').length > 0);
     assert(ok, 'index.html opened straight from a folder still works');
     await local.close();

@@ -20,6 +20,14 @@ h3{font-size:12px;font-weight:700;color:var(--ink-soft)}
   font-size:12px;font-weight:800;line-height:1.15;border-right:1px solid #2A3B34;white-space:nowrap;
 }
 .topbar .brand .sub{font-size:9px;font-weight:600;color:#8FA49B}
+.topbar .brand .sync.offline{color:#F2B36B}
+.topbar .hamenu{
+  appearance:none;border:0;background:var(--ink);color:var(--chalk);font-size:20px;line-height:1;
+  padding:0 12px;cursor:pointer;border-right:1px solid #2A3B34;
+}
+.topbar .hamenu[hidden]{display:none}
+.histrow{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px}
+.histrow .when{flex:1}
 .topbar nav{display:flex;flex:1}
 .topbar nav button{
   flex:1;appearance:none;border:0;cursor:pointer;background:var(--ink);color:#9FB0A8;
@@ -53,6 +61,7 @@ input,select{
 input[type=number]{width:78px}
 input[type=checkbox]{min-height:0;width:20px;height:20px;padding:0;margin:0;accent-color:var(--pitch)}
 label.check{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;font-weight:700}
+label.check[hidden]{display:none}
 .toast{
   position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:40;
   display:flex;align-items:center;gap:10px;max-width:calc(100% - 32px);
