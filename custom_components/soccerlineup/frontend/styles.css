@@ -185,6 +185,10 @@ tr.over td{background:#FBEFEF}
 .tag.short{background:#FBE6CE;color:var(--short)}
 .tag.over{background:#F3DCDC;color:var(--over)}
 .tag.ok{background:#DCEAE1;color:var(--ok)}
+.tag.planned{background:#E4E8F2;color:#34466B}
+.scrollx{overflow-x:auto;max-width:100%}
+.posnote{font-size:11px;color:var(--short);font-weight:700;margin-top:2px;max-width:260px}
+.oppnote{font-size:13px;margin-top:6px;padding:7px 9px;background:#F6F7F5;border:1px solid var(--line);border-radius:8px;-webkit-user-select:text;user-select:text}
 
 .hint{font-size:12px;color:var(--ink-soft);margin:6px 0 0}
 .warn{font-size:13px;color:var(--short);font-weight:700;margin:4px 0 0}

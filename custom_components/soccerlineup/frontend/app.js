@@ -174,7 +174,7 @@ function copyRoster(roster){
 function freshState(){
   var st={
     schemaVersion:7,
-    cfg:{team:"Team", quarters:4, minutes:15, onField:9, formation:"3-3-2", autoBackup:true},
+    cfg:{team:"Team", quarters:4, minutes:15, onField:9, formation:"3-3-2", autoBackup:true, keeperPlan:"halves"},
     roster:copyRoster(DEFAULT_ROSTER), nextId:1, nextGameId:1,
     current:null, games:[]
   };
@@ -192,7 +192,7 @@ function newGame(){
     formation:S.cfg.formation, onField:S.cfg.onField,
     formations:defaultFormations(S.cfg.quarters,S.cfg.formation),
     plan:blankPlan(),
-    goals:{}, oppGoals:null, out:{}
+    goals:{}, oppGoals:null, out:{}, left:{}
   };
 }
 
@@ -293,7 +293,13 @@ function normalizeGame(g, saved){
     g.oppGoals=Math.max(0,Math.floor(Number(g.oppGoals)||0));
   }
   if(!g.out){ g.out={}; }
+  if(!g.left){ g.left={}; }
   if(g.notes===undefined || g.notes===null){ g.notes=""; }
+  /* A saved game dated after today with no score yet was planned ahead and
+     hasn't been played: it doesn't count toward the season until it is. */
+  if(saved && g.planned===undefined){
+    g.planned=!!(g.date && g.date>todayISO() && g.oppGoals===null && teamGoals(g)===0);
+  }
   /* older saves had one formation for the whole game */
   if(!g.onField){ g.onField=gForm(g).n; }
   if(!FORMATIONS[g.formation] || FORMATIONS[g.formation].n!==g.onField){
@@ -317,6 +323,7 @@ function normalizeState(st){
   S.schemaVersion=7;
   normalizeRoster(S.roster);
   if(S.cfg.autoBackup===undefined){ S.cfg.autoBackup=true; }
+  if(["halves","turns","middle"].indexOf(S.cfg.keeperPlan)<0){ S.cfg.keeperPlan="halves"; }
   if(!formationsFor(S.cfg.onField).length){ S.cfg.onField=9; }
   if(!FORMATIONS[S.cfg.formation] || FORMATIONS[S.cfg.formation].n!==S.cfg.onField){
     S.cfg.formation=formationsFor(S.cfg.onField)[0];
@@ -364,7 +371,7 @@ function rememberGameChange(label){
   undoStack.push({
     game:g,label:label,
     plan:copyValue(g.plan),formations:copyValue(g.formations||[]),
-    out:copyValue(g.out||{}),goals:copyValue(g.goals||{}),notes:(g.notes||""),
+    out:copyValue(g.out||{}),left:copyValue(g.left||{}),goals:copyValue(g.goals||{}),notes:(g.notes||""),
     q:ui.q
   });
   if(undoStack.length>20){ undoStack.shift(); }
@@ -384,6 +391,7 @@ function undoLastChange(){
   g.plan=copyValue(u.plan);
   if(u.formations && u.formations.length){ g.formations=copyValue(u.formations); }
   g.out=copyValue(u.out);
+  g.left=copyValue(u.left||{});
   g.notes=(u.notes===undefined)?"":u.notes;
   g.goals=copyValue(u.goals);
   ui.q=Math.min(u.q,g.nq-1);
@@ -421,6 +429,46 @@ function isOut(g, playerId){ return !!(g.out && g.out[playerId]); }
 function presentRoster(g){
   return gameRoster(g).filter(function(p){ return !isOut(g,p.id); });
 }
+/* A player who left partway through (hurt, picked up early) is unavailable
+   from that quarter on: those quarters count as neither played nor sat. */
+function leftFrom(g, playerId){
+  return (g.left && g.left[playerId]!==undefined && g.left[playerId]!==null) ? Number(g.left[playerId]) : -1;
+}
+function availableIn(g, playerId, q){
+  if(isOut(g,playerId)){ return false; }
+  var from=leftFrom(g,playerId);
+  return from<0 || q<from;
+}
+function presentInQ(g, q){
+  return gameRoster(g).filter(function(p){ return availableIn(g,p.id,q); });
+}
+function availableQuarters(g, playerId){
+  var n=0, q;
+  for(q=0;q<g.nq;q++){ if(availableIn(g,playerId,q)){ n++; } }
+  return n;
+}
+/* Saved games that count toward the season: planned ones don't until played. */
+function playedGames(){
+  return S.games.filter(function(g){ return !g.planned; });
+}
+function markLeft(){
+  var g=G(), who=Number(document.getElementById("leftWho").value), from=Number(document.getElementById("leftFrom").value), q, i;
+  if(!who || !(from>0)){ return; }
+  rememberGameChange("left the game");
+  if(!g.left){ g.left={}; }
+  g.left[who]=from;
+  /* off every lineup from that quarter on */
+  for(q=from;q<g.plan.length;q++){
+    for(i=0;i<g.plan[q].length;i++){ if(g.plan[q][i]===who){ g.plan[q][i]=0; } }
+  }
+  save(); render();
+}
+function clearLeft(playerId){
+  var g=G();
+  rememberGameChange("back in the game");
+  if(g.left){ delete g.left[playerId]; }
+  save(); render();
+}
 function toggleOut(playerId){
   var g=G(), i, q;
   rememberGameChange(g.out && g.out[playerId]?"attendance change":"mark player absent");
@@ -429,6 +477,7 @@ function toggleOut(playerId){
     delete g.out[playerId];
   }else{
     g.out[playerId]=true;
+    if(g.left){ delete g.left[playerId]; }
     /* pull her out of every lineup in this game */
     for(q=0;q<g.plan.length;q++){
       for(i=0;i<g.plan[q].length;i++){ if(g.plan[q][i]===playerId){ g.plan[q][i]=0; } }
@@ -462,9 +511,9 @@ function gameResult(g){
   return gf>ga?"W":(gf<ga?"L":"T");
 }
 function seasonRecord(){
-  var r={wins:0,losses:0,ties:0,unknown:0}, i, result;
-  for(i=0;i<S.games.length;i++){
-    result=gameResult(S.games[i]);
+  var r={wins:0,losses:0,ties:0,unknown:0}, i, result, games=playedGames();
+  for(i=0;i<games.length;i++){
+    result=gameResult(games[i]);
     if(result==="W"){ r.wins+=1; }
     else if(result==="L"){ r.losses+=1; }
     else if(result==="T"){ r.ties+=1; }
@@ -475,7 +524,10 @@ function seasonRecord(){
 function setOpponentGoals(value){
   var g=G();
   if(value==="" || value===null || value===undefined){ g.oppGoals=null; }
-  else { g.oppGoals=Math.max(0,Math.floor(Number(value)||0)); }
+  else {
+    g.oppGoals=Math.max(0,Math.floor(Number(value)||0));
+    if(g.planned){ g.planned=false; }   /* a score means it was played */
+  }
   save(); render();
 }
 function bumpGoal(playerId, q, delta){
@@ -509,16 +561,18 @@ function seasonTotals(){
   for(i=0;i<players.length;i++){
     t[players[i].id]={qtrs:0,satQ:0,mins:0,games:0,goals:0,availQ:0,missed:0};
   }
-  for(i=0;i<S.games.length;i++){
-    var g=S.games[i], qt=gameQtrs(g), roster=gameRoster(g);
+  var games=playedGames();
+  for(i=0;i<games.length;i++){
+    var g=games[i], qt=gameQtrs(g), roster=gameRoster(g);
     for(j=0;j<roster.length;j++){
       var id=roster[j].id;
       if(!t[id]){ t[id]={qtrs:0,satQ:0,mins:0,games:0,goals:0,availQ:0,missed:0}; }
       if(isOut(g,id)){ t[id].missed+=1; continue; }   /* missed games count for nothing */
-      var qp=qt[id]||0;
+      /* quarters after leaving the game count for nothing either */
+      var qp=qt[id]||0, avail=availableQuarters(g,id);
       t[id].qtrs+=qp;
-      t[id].satQ+=(g.nq-qp);
-      t[id].availQ+=g.nq;
+      t[id].satQ+=Math.max(0,avail-qp);
+      t[id].availQ+=avail;
       t[id].mins+=qp*g.qlen;
       t[id].games+=1;
       t[id].goals+=gameGoals(g,id);
@@ -549,7 +603,7 @@ function canKeep(player){
   return player.p1==="G" || player.p2==="G";
 }
 function keepers(){
-  return presentRoster(G()).filter(canKeep).sort(function(a,b){
+  return presentInQ(G(), ui.q).filter(canKeep).sort(function(a,b){
     var ao=a.gkOrder||99, bo=b.gkOrder||99;
     return ao-bo;
   });
@@ -593,9 +647,9 @@ function fitScore(player, slot){
    played; planning follows the saved plans so that alternate
    Q4 sheets rotate even when the close lineup was ultimately used. */
 function seasonPositionHistory(){
-  var out={}, gi, q, i;
-  for(gi=0;gi<S.games.length;gi++){
-    var old=S.games[gi];
+  var out={}, gi, q, i, games=playedGames();
+  for(gi=0;gi<games.length;gi++){
+    var old=games[gi];
     for(q=0;q<old.nq;q++){
       var form=qForm(old,q), row=rowAt(old,q)||[];
       for(i=0;i<row.length && i<form.pos.length;i++){
@@ -607,6 +661,28 @@ function seasonPositionHistory(){
     }
   }
   return out;
+}
+/* Lines (defense, midfield, forward) each player has played in this game;
+   goal isn't counted, so a keeper can still play two lines in the field. */
+function currentLineHistory(skipQ){
+  var out={}, g=G(), form, q, i, z;
+  for(q=0;q<g.nq;q++){
+    if(q===skipQ){ continue; }
+    form=qForm(g,q);
+    var row=g.plan[q]||[];
+    for(i=0;i<row.length && i<form.pos.length;i++){
+      z=form.pos[i].z;
+      if(!row[i] || z==="G"){ continue; }
+      if(!out[row[i]]){ out[row[i]]={}; }
+      out[row[i]][lineGroup(z)]=(out[row[i]][lineGroup(z)]||0)+1;
+    }
+  }
+  return out;
+}
+function countKeys(o){
+  var n=0, k;
+  for(k in o){ if(Object.prototype.hasOwnProperty.call(o,k) && o[k]>0){ n++; } }
+  return n;
 }
 function currentPositionHistory(skipQ){
   var out={}, g=G(), form, q, i;
@@ -732,7 +808,7 @@ function fillOutfieldBalanced(avail, outSlots, form, g, seasonPos, currentPos){
 
 function fillRowSmart(availIds, preferredKeeperId, balanceUnits){
   var g=G(), f=qForm(g,ui.q), row=blankRow(g.onField), avail=availIds.slice(), i, k;
-  var seasonPos=seasonPositionHistory(), currentPos=currentPositionHistory(ui.q);
+  var seasonPos=seasonPositionHistory(), currentPos=currentPositionHistory(ui.q), currentLines=currentLineHistory(ui.q);
   var slots=[];
   for(i=0;i<f.pos.length && i<g.onField;i++){ slots.push(i); }
 
@@ -764,16 +840,13 @@ function fillRowSmart(availIds, preferredKeeperId, balanceUnits){
 
   function applyRotationRepair(row){
     /* Greedy and balanced filling both leave the most constrained players for
-       the last open slots, which can force a third position on someone. Swap
-       pairs of outfielders where that removes a third position without
-       creating one, and without materially worsening positional fit. */
-    function distinctFor(pid, slotKey){
-      var played=currentPos[pid]||{}, n=0, k, seen=false;
-      for(k in played){
-        if(!Object.prototype.hasOwnProperty.call(played,k)){ continue; }
-        if(played[k]>0){ n++; if(k===slotKey){ seen=true; } }
-      }
-      return seen ? n : n+1;
+       the last open slots, which can force a third line (defense, midfield,
+       forward) on someone. Swap pairs of outfielders where that removes a
+       third line without creating one, and without materially worsening
+       positional fit. */
+    function distinctFor(pid, slotZone){
+      var played=currentLines[pid]||{}, line=lineGroup(slotZone);
+      return countKeys(played)+((played[line]>0)?0:1);
     }
     var pass, a, b, ia, ib;
     for(pass=0; pass<4; pass++){
@@ -781,13 +854,13 @@ function fillRowSmart(availIds, preferredKeeperId, balanceUnits){
       for(ia=0; ia<outSlots.length; ia++){
         a=row[outSlots[ia]];
         if(!a){ continue; }
-        if(distinctFor(a, f.pos[outSlots[ia]].k)<=2){ continue; }
+        if(distinctFor(a, f.pos[outSlots[ia]].z)<=2){ continue; }
         for(ib=0; ib<outSlots.length; ib++){
           if(ia===ib){ continue; }
           b=row[outSlots[ib]];
           if(!b){ continue; }
-          var dNow=distinctFor(a,f.pos[outSlots[ia]].k)+distinctFor(b,f.pos[outSlots[ib]].k);
-          var dSwap=distinctFor(a,f.pos[outSlots[ib]].k)+distinctFor(b,f.pos[outSlots[ia]].k);
+          var dNow=distinctFor(a,f.pos[outSlots[ia]].z)+distinctFor(b,f.pos[outSlots[ib]].z);
+          var dSwap=distinctFor(a,f.pos[outSlots[ib]].z)+distinctFor(b,f.pos[outSlots[ia]].z);
           if(dSwap>=dNow){ continue; }
           var fitNow=fitScore(P(a,g),f.pos[outSlots[ia]])+fitScore(P(b,g),f.pos[outSlots[ib]]);
           var fitSwap=fitScore(P(a,g),f.pos[outSlots[ib]])+fitScore(P(b,g),f.pos[outSlots[ia]]);
@@ -823,20 +896,17 @@ function fillRowSmart(availIds, preferredKeeperId, balanceUnits){
         var seasonUse=seasonPos[candidate.id]?(seasonPos[candidate.id][slot.k]||0):0;
         var rotate=rotationRank(candidate,open[si]);
 
-        /* Rec soccer: give everyone a second position across a game, but no
-           more than two. Anything beyond two distinct spots in one afternoon
-           is churn, not development. */
-        var played=currentPos[candidate.id]||{}, distinct=0, pk2;
-        for(pk2 in played){
-          if(Object.prototype.hasOwnProperty.call(played,pk2) && played[pk2]>0){ distinct++; }
+        /* Rec soccer: give everyone a second spot across a game, but keep
+           each player to two lines (defense, midfield, forward). Left back
+           then right back is one line; goal isn't counted. A third line in
+           one afternoon is churn, not development. */
+        var played=currentPos[candidate.id]||{}, lines=currentLines[candidate.id]||{};
+        var spots=countKeys(played), lineCount=countKeys(lines);
+        if(!(played[slot.k]>0) && spots===1){
+          sc += 16;               /* second spot: encouraged */
         }
-        var isNewSlot = !(played[slot.k]>0);
-        if(isNewSlot){
-          if(distinct>=2){
-            sc -= 600;            /* third position in one game: avoid */
-          }else if(distinct===1){
-            sc += 16;             /* second position: encouraged */
-          }
+        if(!(lines[lineGroup(slot.z)]>0) && lineCount>=2){
+          sc -= 600;              /* third line in one game: avoid */
         }
 
         /* Strong players also get stretched across the SEASON: a bonus for a
@@ -879,13 +949,13 @@ function rosterValue(player){
 }
 
 function seasonQuarterSits(q){
-  var out={}, gi, i;
-  for(gi=0;gi<S.games.length;gi++){
-    var old=S.games[gi], roster=gameRoster(old);
+  var out={}, gi, i, games=playedGames();
+  for(gi=0;gi<games.length;gi++){
+    var old=games[gi], roster=gameRoster(old);
     if(q>=old.nq){ continue; }
     var row=rowAt(old,q);
     for(i=0;i<roster.length;i++){
-      if(isOut(old,roster[i].id)){ continue; }
+      if(!availableIn(old,roster[i].id,q)){ continue; }
       if(row.indexOf(roster[i].id)<0){ out[roster[i].id]=(out[roster[i].id]||0)+1; }
     }
   }
@@ -898,7 +968,7 @@ function ensureTierCoverage(sitting, protectedKeeperId, q){
     if(form.pos[i].z!=="G"){ groups[lineGroup(form.pos[i].z)]=true; }
   }
   var unitCount=Object.keys(groups).length;
-  var pool=presentRoster(g).filter(function(x){ return x.id!==protectedKeeperId; });
+  var pool=presentInQ(g,q).filter(function(x){ return x.id!==protectedKeeperId; });
   var possible=pool.filter(function(x){ return effectiveTier(x)<3; }).length;
   var needed=Math.min(unitCount,possible), carry=seasonTotals(), here=sitsElsewhere(q);
 
@@ -938,7 +1008,7 @@ function sitsElsewhere(skipQ){
     var r=rowAt(g,q);
     if(!r.filter(function(x){return x>0;}).length){ continue; }
     for(i=0;i<pres.length;i++){
-      if(r.indexOf(pres[i].id)<0){ m[pres[i].id]+=1; }
+      if(availableIn(g,pres[i].id,q) && r.indexOf(pres[i].id)<0){ m[pres[i].id]+=1; }
     }
   }
   return m;
@@ -964,7 +1034,7 @@ function chooseSitters(q, perQ, mode, protectedKeeperId){
   /* Select the bench from the outfield pool. The keeper assigned to this
      quarter is protected before tier proportions are calculated, rather than
      selecting her to sit and then replacing her with an arbitrary player. */
-  var pool=presentRoster(G()).filter(function(p){ return p.id!==protectedKeeperId; });
+  var pool=presentInQ(G(), q).filter(function(p){ return p.id!==protectedKeeperId; });
 
   if(mode==="strongest"){
     /* The close-game last quarter is the best available eleven, full stop.
@@ -1019,8 +1089,29 @@ function chooseSitters(q, perQ, mode, protectedKeeperId){
   return pool.slice(0,perQ).map(function(p){return p.id;});
 }
 
+/* Of the two keepers, the one who has kept goal in the first quarter of
+   fewer played games this season; GK 1 when it's even. */
+function firstHalfKeeper(pk, bk){
+  if(!pk || !bk){ return pk; }
+  var starts={}, games=playedGames(), current=G(), i, j, g, f, id;
+  for(i=0;i<games.length;i++){
+    g=games[i];
+    if(g===current || !g.plan[0]){ continue; }
+    f=qForm(g,0);
+    for(j=0;j<f.pos.length;j++){
+      id=g.plan[0][j];
+      if(f.pos[j].z==="G" && id){ starts[id]=(starts[id]||0)+1; }
+    }
+  }
+  return (starts[bk.id]||0) < (starts[pk.id]||0) ? bk : pk;
+}
+function setKeeperPlan(v){
+  S.cfg.keeperPlan=(["halves","turns","middle"].indexOf(v)>=0)?v:"halves";
+  save(); render();
+}
+
 function autoFillQuarter(){
-  var g=G(), q=ui.q, F=g.onField, pres=presentRoster(g), perQ=pres.length-F;
+  var g=G(), q=ui.q, F=g.onField, pres=presentInQ(g,q), perQ=pres.length-F;
   rememberGameChange("auto-fill Q"+(q+1));
   if(perQ<0){ perQ=0; }
 
@@ -1028,10 +1119,17 @@ function autoFillQuarter(){
      selection - if the game is tight you change it by hand on the day. */
   var sitMode = (q===0) ? "strong" : "mixed";
 
-  var pk=primaryKeeper(), bk=backupKeeper();
-  /* Preserve the close-game keeper rule: GK1 starts and closes; GK2 takes the
-     middle quarters when available. */
-  var wantedKeeper=(q===0 || isLastQ()) ? pk : (bk||pk);
+  var pk=primaryKeeper(), bk=backupKeeper(), wantedKeeper;
+  if(S.cfg.keeperPlan==="middle"){
+    /* GK 1 starts and finishes; GK 2 takes the middle quarters */
+    wantedKeeper=(q===0 || isLastQ()) ? pk : (bk||pk);
+  }else{
+    /* one keeper each half, switching at halftime: GK 1 takes the first half,
+       or with "turns", whoever has started fewer games this season */
+    var first=(S.cfg.keeperPlan==="turns") ? firstHalfKeeper(pk,bk) : pk;
+    var second=(first===pk)?(bk||pk):pk;
+    wantedKeeper=(q < g.nq/2) ? first : second;
+  }
   var sitting=chooseSitters(q, perQ, sitMode, wantedKeeper?wantedKeeper.id:0);
   sitting=ensureTierCoverage(sitting,wantedKeeper?wantedKeeper.id:0,q);
 
@@ -1298,7 +1396,11 @@ function archiveGame(){
   var g=S.current, qt=gameQtrs(g), total=0, i, roster=gameRoster(g);
   for(i=0;i<roster.length;i++){ total+=qt[roster[i].id]||0; }
   if(total===0){ alert("Nothing planned yet."); return; }
-  if(g.oppGoals===null && !confirm("No opponent score has been entered. Save this game without a result? You can add the score later by reopening the game.")){ return; }
+  var future=!!(g.date && g.date>todayISO() && g.oppGoals===null && teamGoals(g)===0);
+  if(future){
+    if(!confirm("This game is on "+g.date+", after today. Save it as a planned game?\n\nA planned game doesn't count toward season totals until you mark it played (or enter the opponent's score).")){ return; }
+  }else if(g.oppGoals===null && !confirm("No opponent score has been entered. Save this game without a result? You can add the score later by reopening the game.")){ return; }
+  g.planned=future;
   g.id=S.nextGameId++;
   g.rosterSnapshot=copyRoster(S.roster);
   S.games.push(g);
@@ -1310,6 +1412,13 @@ function archiveGame(){
     askForPersistentStorage();
   }
   showTab("season");
+}
+function setPlayed(id, played){
+  var i;
+  for(i=0;i<S.games.length;i++){
+    if(S.games[i].id===id){ S.games[i].planned=!played; }
+  }
+  save(); render();
 }
 function editGame(id){
   ui.editId=id; ui.q=0;
@@ -1530,25 +1639,30 @@ function renderPlan(){
   var banner=document.getElementById("editBanner");
   if(ui.editId){
     banner.hidden=false;
-    banner.innerHTML='<span>Editing saved game: '+(esc(g.opp)||"no opponent")+' on '+esc(g.date)+
-      '. Changes save as you go.</span><button class="btn sm quiet" onclick="stopEditing()">Back to next game</button>';
+    banner.innerHTML='<span>Editing '+(g.planned?'a planned game (not counted in the season yet)':'saved game')+': '+(esc(g.opp)||"no opponent")+' on '+esc(g.date)+
+      '. Changes save as you go.</span>'+
+      (g.planned?'<button class="btn sm green" onclick="setPlayed('+g.id+',true)">Mark played</button>':'')+
+      '<button class="btn sm quiet" onclick="stopEditing()">Back to next game</button>';
   }else{ banner.hidden=true; banner.innerHTML=""; }
 
   document.getElementById("fOpp").value=g.opp||"";
   document.getElementById("fDate").value=g.date||"";
   var notesEl=document.getElementById("fNotes");
   if(notesEl && document.activeElement!==notesEl){ notesEl.value=g.notes||""; }
+  renderOpponentNotes(g);
   document.getElementById("fOppGoals").value=(g.oppGoals===null || g.oppGoals===undefined)?"":g.oppGoals;
   document.getElementById("doneEditBtn").hidden=!ui.editId;
   document.getElementById("archiveBtn").textContent=
     ui.editId ? "Save changes" : "Save game to season";
   document.getElementById("saveHint").textContent=
-    ui.editId ? "This game is already in the season. Edits count toward season totals immediately."
-              : "Saving files this game in the season and starts a fresh one. You can reopen and edit it any time.";
+    ui.editId ? (g.planned ? "This is a planned game: it counts toward season totals once you mark it played or enter the opponent's score."
+                           : "This game is already in the season. Edits count toward season totals immediately.")
+              : "Saving files this game in the season and starts a fresh one. You can reopen and edit it any time. A game dated after today is saved as planned.";
   var presNow=presentRoster(g);
   var outCount=rosterNow.length-presNow.length;
+  var leftNames=presNow.filter(function(p){ return leftFrom(g,p.id)>=0; }).map(function(p){ return p.name+" from Q"+(leftFrom(g,p.id)+1); });
   document.getElementById("gameStatus").textContent=
-    presNow.length+" available"+(outCount?" ("+outCount+" out)":"")+", "+g.onField+" on \u2014 "+
+    presNow.length+" available"+(outCount?" ("+outCount+" out)":"")+(leftNames.length?", left the game: "+leftNames.join(", "):"")+", "+g.onField+" on \u2014 "+
     Math.max(0,presNow.length-g.onField)+" sit each quarter. Equal share is "+
     (presNow.length?((g.onField*g.nq)/presNow.length).toFixed(2):"0")+" quarters.";
 
@@ -1560,6 +1674,22 @@ function renderPlan(){
         esc(ap.name)+'</button>';
   }
   document.getElementById("availChips").innerHTML=ah;
+
+  /* left the game partway through */
+  var lw='<option value="">Who?</option>', lf='', lc='', li;
+  for(li=0;li<alpha.length;li++){
+    if(isOut(g,alpha[li].id)){ continue; }
+    if(leftFrom(g,alpha[li].id)>=0){
+      lc+='<button class="chip out" onclick="clearLeft('+alpha[li].id+')" title="Back in the game">'+
+          esc(alpha[li].name)+' &middot; left from Q'+(leftFrom(g,alpha[li].id)+1)+' &times;</button>';
+    }else{
+      lw+='<option value="'+alpha[li].id+'">'+esc(alpha[li].name)+'</option>';
+    }
+  }
+  for(li=1;li<Q;li++){ lf+='<option value="'+li+'">from Q'+(li+1)+'</option>'; }
+  document.getElementById("leftWho").innerHTML=lw;
+  document.getElementById("leftFrom").innerHTML=lf;
+  document.getElementById("leftChips").innerHTML=lc;
 
   h="";
   for(i=0;i<Q;i++){
@@ -1583,7 +1713,7 @@ function renderPlan(){
     pitchSVG(g,curRow(),true,ui.q).replace('<svg ','<svg class="pitch" id="pitchSvg" ');
 
   var row=curRow();
-  var bench=presentRoster(g).filter(function(p){ return row.indexOf(p.id)<0; });
+  var bench=presentInQ(g,ui.q).filter(function(p){ return row.indexOf(p.id)<0; });
   document.getElementById("benchHdr").textContent="Sitting ("+bench.length+")";
 
   bench.sort(function(a,b){ return a.name.localeCompare(b.name); });
@@ -1689,7 +1819,7 @@ function renderPlan(){
   var carry=seasonTotals(), tq=targetQtrs();
   var qc=gameQtrs(g);
   var rows=presentRoster(g).map(function(p){
-    return {p:p, plays:qc[p.id]||0, seasonSatQ:carry[p.id]?carry[p.id].satQ:0};
+    return {p:p, plays:qc[p.id]||0, avail:availableQuarters(g,p.id), seasonSatQ:carry[p.id]?carry[p.id].satQ:0};
   }).sort(function(a,b){ return a.plays-b.plays || b.seasonSatQ-a.seasonSatQ; });
 
   h='<table><thead><tr><th style="text-align:center">Player</th>'+
@@ -1698,8 +1828,10 @@ function renderPlan(){
     '<th class="num" style="text-align:center">Quarters sat<br>this season</th></tr></thead><tbody>';
   for(i=0;i<rows.length;i++){
     var cls=rows[i].plays<tq-0.5?"short":(rows[i].plays>tq+0.5?"over":"");
-    h+='<tr class="'+cls+'"><td>'+esc(rows[i].p.name)+'</td><td class="num" style="text-align:center">'+rows[i].plays+
-       '</td><td class="num" style="text-align:center">'+(Q-rows[i].plays)+
+    if(rows[i].avail<Q){ cls=""; }   /* left the game: not short of time */
+    h+='<tr class="'+cls+'"><td>'+esc(rows[i].p.name)+(rows[i].avail<Q?' <span class="hint" style="margin:0">(left from Q'+(rows[i].avail+1)+')</span>':'')+
+       '</td><td class="num" style="text-align:center">'+rows[i].plays+
+       '</td><td class="num" style="text-align:center">'+Math.max(0,rows[i].avail-rows[i].plays)+
        '</td><td class="num" style="text-align:center">'+rows[i].seasonSatQ+'</td></tr>';
   }
   h+='</tbody></table>';
@@ -1707,11 +1839,93 @@ function renderPlan(){
   document.getElementById("planSits").innerHTML=h;
 }
 
+/* Notes written in earlier games against the same opponent */
+function renderOpponentNotes(g){
+  var box=document.getElementById("oppNotes"), name=(g.opp||"").trim().toLowerCase(), list=[], i, o;
+  if(!box){ return; }
+  for(i=0;i<S.games.length;i++){
+    o=S.games[i];
+    if(o===g || !name || (o.opp||"").trim().toLowerCase()!==name || !(o.notes||"").trim()){ continue; }
+    list.push(o);
+  }
+  list.sort(function(x,y){ return (y.date||"").localeCompare(x.date||""); });
+  if(!list.length){ box.hidden=true; box.innerHTML=""; return; }
+  var h='<h3 style="margin-top:12px">From earlier games against '+esc(g.opp.trim())+'</h3>';
+  for(i=0;i<list.length;i++){
+    h+='<div class="oppnote"><b>'+esc(list[i].date||"")+'</b> '+esc(list[i].notes.trim()).replace(/\n/g,"<br>")+'</div>';
+  }
+  box.innerHTML=h; box.hidden=false;
+}
+
+/* Where each player has played this season, by line, and whether their
+   primary and secondary positions in Setup cover it. */
+function lineOfZone(z){ return z==="G" ? "GK" : (z==="D" ? "DEF" : (z==="F" ? "FWD" : "MID")); }
+function positionStats(){
+  var stats={}, games=playedGames(), gi, q, i, g, f, row, id, line, k;
+  var players=seasonPlayers();
+  for(i=0;i<players.length;i++){
+    stats[players[i].id]={GK:0,DEF:0,MID:0,FWD:0, goals:{GK:0,DEF:0,MID:0,FWD:0}};
+  }
+  for(gi=0;gi<games.length;gi++){
+    g=games[gi];
+    for(q=0;q<g.nq;q++){
+      f=qForm(g,q); row=g.plan[q]||[];
+      for(i=0;i<row.length && i<f.pos.length;i++){
+        id=row[i];
+        if(!id || !stats[id]){ continue; }
+        line=lineOfZone(f.pos[i].z);
+        stats[id][line]++;
+        stats[id].goals[line]+=goalsOf(g,id,q);
+      }
+    }
+  }
+  for(k in stats){
+    if(Object.prototype.hasOwnProperty.call(stats,k)){ stats[k].note=positionNote(P(Number(k)), stats[k]); }
+  }
+  return stats;
+}
+function positionNote(p, st){
+  if(!p){ return ""; }
+  var notes=[], covered={}, outfield=st.DEF+st.MID+st.FWD, names={DEF:"defense",MID:"midfield",FWD:"forward"}, line;
+  if(!p.p1 && !p.p2){ return ""; }
+  [p.p1,p.p2].forEach(function(z){ if(z){ covered[lineOfZone(z)]=true; } });
+  if(p.p1 && p.p1===p.p2){ notes.push("secondary is the same as primary"); }
+  if(outfield>=6){
+    ["DEF","MID","FWD"].forEach(function(l){
+      if(!covered[l] && st[l]/outfield>=0.3){ notes.push("plays "+names[l]+" often ("+st[l]+" of "+outfield+" field quarters), which isn't in the settings"); }
+    });
+  }
+  return notes.join("; ");
+}
+function renderPositionStats(){
+  var box=document.getElementById("positionStats");
+  if(!box){ return; }
+  var st=positionStats(), players=S.roster.slice().sort(function(x,y){ return x.name.localeCompare(y.name); }), i, p, s, h;
+  var zl={G:"Goalie",D:"Defense",MD:"Mid - def",M:"Mid",MA:"Mid - att",F:"Forward","":"Any"};
+  function goalText(gl){
+    var parts=[], l;
+    for(l in gl){ if(Object.prototype.hasOwnProperty.call(gl,l) && gl[l]){ parts.push(gl[l]+" "+l.toLowerCase()); } }
+    return parts.join(", ");
+  }
+  h='<div class="scrollx"><table><thead><tr><th>Player</th><th class="num">GK</th><th class="num">DEF</th><th class="num">MID</th><th class="num">FWD</th>'+
+    '<th>Goals from</th><th>Set as</th></tr></thead><tbody>';
+  for(i=0;i<players.length;i++){
+    p=players[i]; s=st[p.id]||{GK:0,DEF:0,MID:0,FWD:0,goals:{},note:""};
+    h+='<tr><td>'+esc(p.name)+(s.note?'<div class="posnote">'+esc(s.note)+'</div>':'')+'</td>'+
+       '<td class="num">'+(s.GK||"")+'</td><td class="num">'+(s.DEF||"")+'</td><td class="num">'+(s.MID||"")+'</td><td class="num">'+(s.FWD||"")+'</td>'+
+       '<td>'+esc(goalText(s.goals))+'</td><td>'+esc(zl[p.p1||""]+" / "+zl[p.p2||""])+'</td></tr>';
+  }
+  h+='</tbody></table></div><p class="hint">Quarters at each line in played games, with goals scored from each. A note appears when a player often plays a line that neither of her positions in Setup covers.</p>';
+  box.innerHTML=h;
+}
+
 function renderSeason(){
   var t=seasonTotals(), record=seasonRecord(), i, h="";
+  var plannedCount=S.games.length-playedGames().length;
   document.getElementById("seasonMeta").textContent=
     "Record: "+record.wins+"-"+record.losses+"-"+record.ties+" (W-L-T). "+
-    S.games.length+" game"+(S.games.length===1?"":"s")+" saved. "+
+    S.games.length+" game"+(S.games.length===1?"":"s")+" saved"+
+    (plannedCount?", "+plannedCount+" of them planned and not counted yet":"")+". "+
     (record.unknown?record.unknown+" saved game"+(record.unknown===1?" has":"s have")+" no opponent score and "+(record.unknown===1?"is":"are")+" excluded from the record. ":"")+
     "Sorted by smallest share of available quarters played \u2014 missed games are excluded from the comparison.";
   var active={}, currentIndex;
@@ -1749,6 +1963,7 @@ function renderSeason(){
     for(i=0;i<S.games.length;i++){
       var g=S.games[i], result=gameResult(g), resultHTML="\u2014";
       if(result){ resultHTML='<span class="tag '+(result==="W"?"ok":(result==="L"?"over":"short"))+'">'+result+'</span>'; }
+      if(g.planned){ resultHTML='<span class="tag planned">Planned</span> <button class="btn sm" onclick="setPlayed('+g.id+',true)">Mark played</button>'; }
       h+='<tr><td>'+esc(g.date)+'</td><td>'+esc(g.opp||"\u2014")+'</td><td>'+resultHTML+'</td>'+
          '<td class="num">'+teamGoals(g)+'</td><td class="num">'+(g.oppGoals===null?"\u2014":g.oppGoals)+'</td>'+
          '<td><button class="btn sm" onclick="editGame('+g.id+')">Open</button></td>'+
@@ -1758,12 +1973,14 @@ function renderSeason(){
     h+='<p class="hint">Open a game to check it against what actually happened, adjust the lineups, and reprint.</p>';
   }
   document.getElementById("gameList").innerHTML=h;
+  renderPositionStats();
 }
 
 function renderSetup(){
   document.getElementById("cfgTeam").value=S.cfg.team;
   document.getElementById("cfgQ").value=S.cfg.quarters;
   document.getElementById("cfgMin").value=S.cfg.minutes;
+  document.getElementById("cfgKeeper").value=S.cfg.keeperPlan||"halves";
 
   var sizes=fieldSizes(), keys=formationsFor(S.cfg.onField), h="", i;
   for(i=0;i<sizes.length;i++){
@@ -1820,6 +2037,9 @@ function renderPrint(){
       '<div class="sub">'+esc(g.date||"")+' &middot; '+qFormName(g,q)+' &middot; '+Q+'&times;'+g.qlen+' min'+
       (rosterNow.length-presentRoster(g).length ?
         ' &middot; OUT: '+esc(rosterNow.filter(function(p){return isOut(g,p.id);}).map(function(p){return p.name;}).join(", "))
+        : '')+
+      (rosterNow.some(function(p){ return leftFrom(g,p.id)>=0; }) ?
+        ' &middot; LEFT: '+esc(rosterNow.filter(function(p){ return leftFrom(g,p.id)>=0; }).map(function(p){ return p.name+" (Q"+(leftFrom(g,p.id)+1)+")"; }).join(", "))
         : '')+'</div></div>';
   }
 
@@ -1834,7 +2054,7 @@ function renderPrint(){
   function sitDock(){
     var totals=gameQtrs(g), d='', i;
     var summaryRoster=gameRoster(g).slice().sort(function(a,b){
-      var sa=Q-(totals[a.id]||0), sb=Q-(totals[b.id]||0);
+      var sa=availableQuarters(g,a.id)-(totals[a.id]||0), sb=availableQuarters(g,b.id)-(totals[b.id]||0);
       return sa-sb || a.name.localeCompare(b.name);
     });
     d+='<aside class="psummary"><h5>Quarters sitting</h5><table class="psummary-table"><thead><tr><th>Player</th><th class="num">Sits</th></tr></thead><tbody>';
@@ -1842,6 +2062,7 @@ function renderPrint(){
       var player=summaryRoster[i];
       d+='<tr><td>'+esc(player.name)+'</td>';
       if(isOut(g,player.id)){ d+='<td class="outmark">OUT</td>'; }
+      else if(leftFrom(g,player.id)>=0){ d+='<td class="num">'+Math.max(0,availableQuarters(g,player.id)-(totals[player.id]||0))+' &middot; left Q'+(leftFrom(g,player.id)+1)+'</td>'; }
       else { d+='<td class="num">'+(Q-(totals[player.id]||0))+'</td>'; }
       d+='</tr>';
     }
@@ -1853,7 +2074,7 @@ function renderPrint(){
     h+='<section class="print-page">'+pageHead(q)+'<div class="pquarter-title">Q'+(q+1)+'</div>'+
        '<div class="ppage-body"><div class="pmain pfield-single">'+pitchSVG(g,g.plan[q],false,q)+
        '<div class="psit"><b>Sitting this quarter:</b> '+
-       esc(presentRoster(g).filter(function(p){return g.plan[q].indexOf(p.id)<0;}).map(function(p){return p.name;}).join(", ")||"\u2014")+
+       esc(presentInQ(g,q).filter(function(p){return g.plan[q].indexOf(p.id)<0;}).map(function(p){return p.name;}).join(", ")||"\u2014")+
        '</div><div class="psit"><b>Q'+(q+1)+' goals:</b> ____</div></div>'+
        '<div class="pside">'+sitDock()+notesBlock()+'</div></div></section>';
   }

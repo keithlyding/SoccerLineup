@@ -47,6 +47,13 @@
     <h3 style="margin-top:10px">Who is here today -- click on players to mark absent</h3>
     <div class="chips" id="availChips"></div>
     <p class="hint">Tap a name to mark her out for this game. Missed games do not count against her playing time.</p>
+    <div class="row" style="margin-top:8px">
+      <span class="hint" style="margin:0">Left during the game (hurt, picked up early)?</span>
+      <select id="leftWho" class="qform" aria-label="Player who left"></select>
+      <select id="leftFrom" class="qform" aria-label="Quarter she left"></select>
+      <button class="btn sm" onclick="markLeft()">Mark</button>
+    </div>
+    <div class="chips" id="leftChips"></div>
   </div>
 
   <div class="qtabs" id="qtabs"></div>
@@ -106,6 +113,7 @@
       style="width:100%;font:inherit;padding:9px;border:1px solid var(--line);border-radius:8px;resize:vertical"
       onchange="setGameField('notes',this.value)"></textarea>
     <p class="hint">Prints on every quarter page.</p>
+    <div id="oppNotes" hidden></div>
   </div>
 
   <div class="card">
@@ -134,6 +142,10 @@
     <h2>Season totals</h2>
     <p class="hint" id="seasonMeta"></p>
     <div id="seasonTable"></div>
+  </div>
+  <div class="card">
+    <h2>Positions played</h2>
+    <div id="positionStats"></div>
   </div>
   <div class="card">
     <h2>Games</h2>
@@ -166,8 +178,13 @@
       <label class="field">Default formation<select id="cfgFormation" onchange="setDefaultFormation(this.value)"></select></label>
       <label class="field">Quarters<input type="number" id="cfgQ" min="2" max="4" onchange="saveCfg()"></label>
       <label class="field">Minutes<input type="number" id="cfgMin" min="5" max="45" onchange="saveCfg()"></label>
+      <label class="field">Goalkeepers<select id="cfgKeeper" onchange="setKeeperPlan(this.value)">
+        <option value="halves">Switch at halftime, GK 1 first</option>
+        <option value="turns">Switch at halftime, taking turns starting</option>
+        <option value="middle">GK 1 starts and finishes, GK 2 the middle</option>
+      </select></label>
     </div>
-    <p class="hint">Changing the number of players on the field clears the game you're currently planning, since the positions change. The default formation is what every new game starts with; each quarter can use a different formation from the menu on the Plan tab.</p>
+    <p class="hint">Changing the number of players on the field clears the game you're currently planning, since the positions change. The default formation is what every new game starts with; each quarter can use a different formation from the menu on the Plan tab. Goalkeepers: with "Switch at halftime", auto-fill gives GK 1 and GK 2 a half each; "taking turns" starts whoever has kept goal first in fewer games this season.</p>
   </div>
 
   <div class="card">
