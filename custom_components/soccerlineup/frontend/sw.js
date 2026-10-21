@@ -68,12 +68,23 @@ function refreshOnce(){
   return refreshing;
 }
 
+/* The web copy of a file, skipping the browser's own cache. One retry: right
+   after the connection comes back, a browser may first try a connection the
+   server has already closed. */
+function fetchFresh(key){
+  return fetch(key, {cache: "reload"}).catch(function(){
+    return new Promise(function(r){ setTimeout(r, 400); }).then(function(){
+      return fetch(key, {cache: "reload"});
+    });
+  });
+}
+
 /* Check every app file against the web copy; resolves true if any changed. */
 function refreshAll(){
   return caches.open(CACHE).then(function(cache){
     return Promise.all(FILES.map(function(f){
       var key = scopeUrl(f);
-      return fetch(key, {cache: "no-cache"}).then(function(res){
+      return fetchFresh(key).then(function(res){
         if(!res.ok){ return false; }
         return cache.match(key).then(function(old){
           return Promise.all([old ? old.arrayBuffer() : null, res.clone().arrayBuffer()]);

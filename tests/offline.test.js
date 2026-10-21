@@ -62,7 +62,19 @@ function assert(cond, msg) {
   server = await startServer(server.port, '\nwindow.__newVersion = true;\n');
   assert(await page.evaluate(() => document.getElementById('updateToast').hidden), 'no update notice before anything changes');
   await page.reload();
-  await page.waitForSelector('#updateToast:not([hidden])', { timeout: 10000 });
+  try {
+    await page.waitForSelector('#updateToast:not([hidden])', { timeout: 10000 });
+  } catch (e) {
+    // say what the offline helper saw, so a failure can be traced
+    const seen = await page.evaluate(async () => {
+      const keys = await caches.keys(), c = await caches.open(keys[0]);
+      const saved = await c.match(new URL('app.js', location.href).href);
+      return { controlled: !!navigator.serviceWorker.controller,
+               savedHasNewVersion: saved ? (await saved.text()).includes('__newVersion') : 'no saved copy',
+               scriptAddress: (document.querySelector('script[src^="app.js"]') || {}).src };
+    }).catch(err => 'could not inspect: ' + err.message);
+    throw new Error('FAILED: no update notice. Offline helper state: ' + JSON.stringify(seen));
+  }
   assert(true, 'a changed app file shows "A new version of the app is ready"');
   await page.click('#updateToast button');
   await page.waitForLoadState('load');
