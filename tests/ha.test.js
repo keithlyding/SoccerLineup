@@ -102,6 +102,8 @@ function handle(dev, msg) {
 
   const phoneOptions = setup.iphone ? setup.contextOptions : { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true };
   const laptop = await openDevice('Laptop', false, { viewport: { width: 1200, height: 900 }, acceptDownloads: true });
+  const frameBox = await laptop.page.locator('soccerlineup-panel iframe').boundingBox();
+  assert(frameBox && frameBox.height >= 890, 'the app fills the window\'s height even when the page gives the panel none (' + Math.round(frameBox.height) + ' px)');
   await until(async () => HAS.rev === 1, 'the first version to reach the server');
   assert((await status(laptop)) === 'Saved on Home Assistant', 'the laptop shows "Saved on Home Assistant"');
 

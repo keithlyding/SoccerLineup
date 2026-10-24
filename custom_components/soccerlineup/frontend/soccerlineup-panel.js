@@ -67,10 +67,14 @@
         self.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true }));
       };
       var root = this.attachShadow({ mode: "open" });
-      /* The frame doesn't get the phone's notch and home-bar spacing, so this page adds it. */
+      /* A frame is only 150 pixels tall unless it is told otherwise, and some
+         Home Assistant pages don't give a panel a height. So the panel takes
+         the window's height itself (100dvh follows a phone's moving toolbars).
+         The frame doesn't get the phone's notch and home-bar spacing, so this
+         page adds it. */
       root.innerHTML =
         "<style>" +
-        ":host{display:block;height:100%;box-sizing:border-box;background:#13201B;" +
+        ":host{display:block;height:100vh;height:100dvh;box-sizing:border-box;background:#13201B;" +
         "padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)}" +
         "iframe{display:block;border:0;width:100%;height:100%;background:#FBFAF6}" +
         "</style><iframe title=\"Soccer Lineup\"></iframe>";
