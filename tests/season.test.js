@@ -67,6 +67,21 @@ function assert(cond, msg) {
   await page.selectOption('#cfgKeeper', 'halves');
   await page.evaluate(() => showTab('plan'));
 
+  // ---------- 4-2-2: the 4-1-3 diamond with two midfielders and two forwards ----------
+  const diamond = await page.evaluate(() => {
+    ui.q = 0; S.current.formations = defaultFormations(4, '4-1-3'); autoFillAll();
+    const f = qForm(S.current, 0), row = S.current.plan[0].slice();
+    const back = {}; f.pos.forEach((p, i) => { if (p.z === 'G' || p.z === 'D') back[p.k] = row[i]; });
+    setQuarterFormation('4-2-2');
+    const g = S.current, f2 = qForm(g, 0), after = {};
+    f2.pos.forEach((p, i) => { if (p.z === 'G' || p.z === 'D') after[p.k] = g.plan[0][i]; });
+    return { same: JSON.stringify(back) === JSON.stringify(after), labels: f2.pos.map(p => p.k).join(' '),
+             full: g.plan[0].filter(x => x).length, menu: Array.from(document.querySelectorAll('#qFormation option')).map(o => o.value).includes('4-2-2') };
+  });
+  assert(diamond.menu && diamond.labels === 'GK SW LB RB STP LM RM LF RF', '4-2-2 is in the menu: GK, the diamond (SW, LB, RB, STP), two midfielders, two forwards');
+  assert(diamond.same && diamond.full === 9, 'switching a quarter from 4-1-3 to 4-2-2 keeps the keeper and the whole diamond in place');
+  await page.evaluate(() => { undoLastChange(); undoLastChange(); });
+
   // ---------- the two-lines limit over many games and mixed formations ----------
   const worst = await page.evaluate(() => {
     let most = 0;

@@ -86,7 +86,7 @@ function assert(cond, msg) {
   await page.evaluate(() => { ui.q = 1; render(); });
   const before = await page.evaluate(() => S.current.plan[1].slice());
   const opts = await page.$$eval('#qFormation option', os => os.map(o => o.value));
-  assert(opts.join(',') === '3-3-2,4-1-3,3-2-3,2-3-3,3-1-3-1,3-4-1,4-3-1', 'quarter menu lists the 9v9 formations: ' + opts.join(','));
+  assert(opts.join(',') === '3-3-2,4-1-3,4-2-2,3-2-3,2-3-3,3-1-3-1,3-4-1,4-3-1', 'quarter menu lists the 9v9 formations: ' + opts.join(','));
   await page.selectOption('#qFormation', '4-1-3');
   st = await page.evaluate(() => ({
     formations: S.current.formations.slice(), row: S.current.plan[1].slice(),
@@ -200,7 +200,7 @@ function assert(cond, msg) {
 
   await page.evaluate(() => { editGame(S.games[0].id); });
   st = await page.evaluate(() => ({ slots: document.querySelectorAll('#pitchSvg .slotbox').length, opts: document.querySelectorAll('#qFormation option').length }));
-  assert(st.slots === 9 && st.opts === 7, 'an old 9v9 game still edits as 9v9 while Setup is 7v7');
+  assert(st.slots === 9 && st.opts === 8, 'an old 9v9 game still edits as 9v9 while Setup is 7v7');
   await page.evaluate(() => { clearQuarter(); });
   assert((await page.evaluate(() => G().plan[0].length)) === 9, 'clearing a quarter of that game keeps nine spots');
   await page.evaluate(() => { undoLastChange(); stopEditing(); });

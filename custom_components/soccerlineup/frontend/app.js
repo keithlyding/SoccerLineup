@@ -18,6 +18,15 @@ var FORMATIONS = {
     {k:"CM",z:"M",imp:0.92,x:160,y:176},
     {k:"LF",z:"F",imp:0.72,x:56,y:80},{k:"ST",z:"F",imp:0.90,x:160,y:64},{k:"RF",z:"F",imp:0.72,x:264,y:80}
   ]},
+  /* the same diamond back four as 4-1-3, then two midfielders and two forwards */
+  "4-2-2": {n:9, pos:[
+    {k:"GK",z:"G",imp:0.70,x:160,y:356},
+    {k:"SW",z:"D",imp:0.82,x:160,y:312},
+    {k:"LB",z:"D",imp:0.52,x:52,y:266},{k:"RB",z:"D",imp:0.52,x:268,y:266},
+    {k:"STP",z:"D",imp:0.80,x:160,y:244},
+    {k:"LM",z:"M",imp:0.80,x:96,y:168},{k:"RM",z:"M",imp:0.80,x:224,y:168},
+    {k:"LF",z:"F",imp:0.80,x:108,y:76},{k:"RF",z:"F",imp:0.80,x:212,y:76}
+  ]},
   "3-2-3": {n:9, pos:[
     {k:"GK",z:"G",imp:0.70,x:160,y:352},
     {k:"LB",z:"D",imp:0.45,x:62,y:276},{k:"CB",z:"D",imp:0.80,x:160,y:290},{k:"RB",z:"D",imp:0.45,x:258,y:276},
