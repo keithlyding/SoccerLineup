@@ -13,19 +13,18 @@ permissions:
 jobs:
   browser:
     name: App in the browser
-    # Pinned: Playwright 1.56.1 (package.json) can't install browsers on
-    # Ubuntu 26.04, which ubuntu-latest became in October 2026. Move to
-    # ubuntu-latest together with a Playwright upgrade.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Playwright's own image: the browsers and the system libraries they need
+    # are already inside, so nothing is installed during the run. (Installing
+    # WebKit's libraries from Ubuntu's package mirror sometimes took the whole
+    # 15 minutes.) The image's version must match playwright in package.json.
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble
+      options: --user 1001
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium webkit
       - name: Desktop (Chromium)
         run: npm test
       - name: iPhone screen and touch (WebKit, the engine Safari uses)
