@@ -68,17 +68,22 @@ var FORMATIONS = {
    the position names and how much each spot matters to auto-fill (imp). */
 var LINE_SLOTS={
   D: {1:[["CB",0.85]], 2:[["LB",0.62],["RB",0.62]], 3:[["LB",0.45],["CB",0.80],["RB",0.45]],
-      4:[["LB",0.52],["LCB",0.78],["RCB",0.78],["RB",0.52]]},
+      4:[["LB",0.52],["LCB",0.78],["RCB",0.78],["RB",0.52]],
+      5:[["LWB",0.50],["LCB",0.75],["CB",0.85],["RCB",0.75],["RWB",0.50]]},
   MD:{1:[["DM",0.85]], 2:[["LDM",0.78],["RDM",0.78]], 3:[["LDM",0.55],["DM",0.85],["RDM",0.55]],
-      4:[["LWB",0.50],["LDM",0.75],["RDM",0.75],["RWB",0.50]]},
+      4:[["LWB",0.50],["LDM",0.75],["RDM",0.75],["RWB",0.50]],
+      5:[["LWB",0.50],["LDM",0.70],["DM",0.82],["RDM",0.70],["RWB",0.50]]},
   M: {1:[["CM",0.90]], 2:[["LM",0.70],["RM",0.70]], 3:[["LM",0.58],["CM",0.90],["RM",0.58]],
-      4:[["LM",0.52],["LCM",0.80],["RCM",0.80],["RM",0.52]]},
+      4:[["LM",0.52],["LCM",0.80],["RCM",0.80],["RM",0.52]],
+      5:[["LM",0.55],["LCM",0.78],["CM",0.90],["RCM",0.78],["RM",0.55]]},
   MA:{1:[["AM",0.82]], 2:[["LAM",0.70],["RAM",0.70]], 3:[["LAM",0.55],["AM",0.80],["RAM",0.55]],
-      4:[["LAM",0.50],["LCAM",0.75],["RCAM",0.75],["RAM",0.50]]},
+      4:[["LAM",0.50],["LCAM",0.75],["RCAM",0.75],["RAM",0.50]],
+      5:[["LAM",0.50],["LCAM",0.70],["AM",0.82],["RCAM",0.70],["RAM",0.50]]},
   F: {1:[["ST",0.90]], 2:[["LF",0.80],["RF",0.80]], 3:[["LW",0.55],["ST",0.90],["RW",0.55]],
-      4:[["LW",0.52],["LS",0.80],["RS",0.80],["RW",0.52]]}
+      4:[["LW",0.52],["LS",0.80],["RS",0.80],["RW",0.52]],
+      5:[["LW",0.52],["LS",0.75],["ST",0.90],["RS",0.75],["RW",0.52]]}
 };
-var LINE_X={1:[160], 2:[106,214], 3:[62,160,258], 4:[50,112,208,270]};
+var LINE_X={1:[160], 2:[106,214], 3:[62,160,258], 4:[50,112,208,270], 5:[48,104,160,216,272]};
 var LINE_ZONES={2:["D","F"], 3:["D","M","F"], 4:["D","MD","MA","F"]};
 function buildFormation(name){
   var lines=String(name).split("-").map(Number), zones=LINE_ZONES[lines.length],
@@ -86,13 +91,14 @@ function buildFormation(name){
   if(!zones){ throw new Error("Formation "+name+" needs 2 to 4 lines"); }
   for(li=0;li<lines.length;li++){
     var count=lines[li], slots=LINE_SLOTS[zones[li]][count];
-    if(!slots){ throw new Error("Formation "+name+" can have 1 to 4 players in a line"); }
+    if(!slots){ throw new Error("Formation "+name+" can have 1 to 5 players in a line"); }
     /* back line near the box, front line near halfway, the rest evenly between */
     var y=284-li*(212/(lines.length-1));
     for(j=0;j<count;j++){
       var outer=(j===0 || j===count-1), dy=0;
       if(count===3 && outer){ dy=-12; }        /* wide players sit a little higher */
       if(count===4){ dy=outer?-18:18; }        /* stagger a flat four so printed name plates do not overlap */
+      if(count===5){ dy=(j%2===0)?-18:18; }    /* and a five as a zigzag */
       pos.push({k:slots[j][0], z:zones[li], imp:slots[j][1], x:LINE_X[count][j], y:Math.round(y+dy)});
     }
     n+=count;
@@ -110,6 +116,15 @@ addFormation("3-2-2");
 /* 7v7 */
 addFormation("2-3-1");
 addFormation("2-1-2-1");
+/* 11v11 (U13 and older) */
+addFormation("4-4-2");
+addFormation("4-3-3");
+addFormation("4-2-3-1");
+addFormation("4-1-4-1");
+addFormation("4-5-1");
+addFormation("3-5-2");
+addFormation("3-4-3");
+addFormation("5-3-2");
 
 var ZONES=[
   {v:"G", label:"Goalie"},
@@ -414,6 +429,16 @@ function renderUndoButtons(){
     buttons[j].title=i<0?"Nothing to undo":"Undo "+undoStack[i].label;
   }
 }
+
+/* What a game's periods are called: two halves, three periods, or four quarters. */
+function periodWords(n){
+  if(n===2){ return {one:"Half", many:"Halves", low:"half", lows:"halves", s:"H"}; }
+  if(n===3){ return {one:"Period", many:"Periods", low:"period", lows:"periods", s:"P"}; }
+  return {one:"Quarter", many:"Quarters", low:"quarter", lows:"quarters", s:"Q"};
+}
+function PW(g){ return periodWords((g||G()).nq); }
+/* for season-wide text: the team's usual format */
+function seasonWords(){ return periodWords(S.cfg.quarters); }
 
 function gameRoster(g){ return g && g.rosterSnapshot ? g.rosterSnapshot : S.roster; }
 function P(id,g){
@@ -1114,6 +1139,36 @@ function firstHalfKeeper(pk, bk){
   }
   return (starts[bk.id]||0) < (starts[pk.id]||0) ? bk : pk;
 }
+/* Setup: fill in the match format for an age group. Leagues differ, so these
+   are starting points (U.S. Soccer's age formats; game lengths from one
+   state's recreational rules) and every number stays editable. */
+var AGE_PRESETS={
+  u10:{n:7, p:4, m:12},
+  u12:{n:9, p:2, m:30},
+  u13:{n:11, p:2, m:35}
+};
+function applyAgePreset(v){
+  var p=AGE_PRESETS[v], g=S.current;
+  if(!p){ render(); return; }
+  var placed=g.plan.some(function(r){ return r.some(function(x){ return x>0; }); });
+  if(placed && (p.n!==g.onField || p.p!==g.nq) &&
+     !confirm("This changes the number of players on the field or of periods, which clears the game you're planning. Go ahead?")){
+    render(); return;
+  }
+  S.cfg.minutes=p.m; S.cfg.quarters=p.p;
+  setFieldSize(String(p.n));
+  g=S.current;
+  if(g.nq!==p.p){
+    discardUndoForGame(g);
+    g.nq=p.p;
+    g.plan=blankPlan(g.nq,g.onField);
+    g.formations=defaultFormations(g.nq,g.formation);
+    if(g.goals){ g.goals={}; }
+  }
+  g.qlen=p.m;
+  ui.q=0; ui.selSlot=-1; ui.selPlayer=0;
+  save(); render();
+}
 function setKeeperPlan(v){
   S.cfg.keeperPlan=(["halves","turns","middle"].indexOf(v)>=0)?v:"halves";
   save(); render();
@@ -1121,7 +1176,7 @@ function setKeeperPlan(v){
 
 function autoFillQuarter(){
   var g=G(), q=ui.q, F=g.onField, pres=presentInQ(g,q), perQ=pres.length-F;
-  rememberGameChange("auto-fill Q"+(q+1));
+  rememberGameChange("auto-fill "+PW(g).s+(q+1));
   if(perQ<0){ perQ=0; }
 
   /* Q1 opens strong. Every other quarter, Q4 included, uses the same fair
@@ -1202,13 +1257,13 @@ function togglePrev(){
 }
 function clearQuarter(){
   var g=G();
-  rememberGameChange("clear Q"+(ui.q+1));
+  rememberGameChange("clear "+PW(g).s+(ui.q+1));
   g.plan[ui.q]=blankRow(g.onField);
   ui.selSlot=-1; ui.selPlayer=0;
   save(); render();
 }
 function clearPlan(){
-  if(!confirm("Clear every quarter of this game?")){ return; }
+  if(!confirm("Clear every "+PW().low+" of this game?")){ return; }
   var g=G();
   rememberGameChange("clear whole game");
   g.plan=blankPlan(g.nq,g.onField);
@@ -1287,7 +1342,7 @@ function setQuarterFormation(v, allQuarters){
     if((allQuarters || q===ui.q) && qFormName(g,q)!==v){ any=true; }
   }
   if(!any){ render(); return; }
-  rememberGameChange(allQuarters?"formation change, all quarters":"formation change Q"+(ui.q+1));
+  rememberGameChange(allQuarters?"formation change, all "+PW(g).lows:"formation change "+PW(g).s+(ui.q+1));
   for(q=0;q<g.nq;q++){
     if(!allQuarters && q!==ui.q){ continue; }
     if(qFormName(g,q)===v){ continue; }
@@ -1727,11 +1782,11 @@ function renderPlan(){
               : "Saving files this game in the season and starts a fresh one. You can reopen and edit it any time. A game dated after today is saved as planned.";
   var presNow=presentRoster(g);
   var outCount=rosterNow.length-presNow.length;
-  var leftNames=presNow.filter(function(p){ return leftFrom(g,p.id)>=0; }).map(function(p){ return p.name+" from Q"+(leftFrom(g,p.id)+1); });
+  var leftNames=presNow.filter(function(p){ return leftFrom(g,p.id)>=0; }).map(function(p){ return p.name+" from "+PW(g).s+(leftFrom(g,p.id)+1); });
   document.getElementById("gameStatus").textContent=
     presNow.length+" available"+(outCount?" ("+outCount+" out)":"")+(leftNames.length?", left the game: "+leftNames.join(", "):"")+", "+g.onField+" on \u2014 "+
-    Math.max(0,presNow.length-g.onField)+" sit each quarter. Equal share is "+
-    (presNow.length?((g.onField*g.nq)/presNow.length).toFixed(2):"0")+" quarters.";
+    Math.max(0,presNow.length-g.onField)+" sit each "+PW(g).low+". Equal share is "+
+    (presNow.length?((g.onField*g.nq)/presNow.length).toFixed(2):"0")+" "+PW(g).lows+".";
 
   var ah="", ai2;
   var alpha=rosterNow.slice().sort(function(a,b){ return a.name.localeCompare(b.name); });
@@ -1748,12 +1803,12 @@ function renderPlan(){
     if(isOut(g,alpha[li].id)){ continue; }
     if(leftFrom(g,alpha[li].id)>=0){
       lc+='<button class="chip out" onclick="clearLeft('+alpha[li].id+')" title="Back in the game">'+
-          esc(alpha[li].name)+' &middot; left from Q'+(leftFrom(g,alpha[li].id)+1)+' &times;</button>';
+          esc(alpha[li].name)+' &middot; left from '+PW(g).s+(leftFrom(g,alpha[li].id)+1)+' &times;</button>';
     }else{
       lw+='<option value="'+alpha[li].id+'">'+esc(alpha[li].name)+'</option>';
     }
   }
-  for(li=1;li<Q;li++){ lf+='<option value="'+li+'">from Q'+(li+1)+'</option>'; }
+  for(li=1;li<Q;li++){ lf+='<option value="'+li+'">from '+PW(g).s+(li+1)+'</option>'; }
   document.getElementById("leftWho").innerHTML=lw;
   document.getElementById("leftFrom").innerHTML=lf;
   document.getElementById("leftChips").innerHTML=lc;
@@ -1761,12 +1816,15 @@ function renderPlan(){
   h="";
   for(i=0;i<Q;i++){
     h+='<button role="tab" aria-selected="'+(ui.q===i?"true":"false")+
-       '" onclick="ui.q='+i+';ui.selSlot=-1;ui.selPlayer=0;render()">Q'+(i+1)+
+       '" onclick="ui.q='+i+';ui.selSlot=-1;ui.selPlayer=0;render()">'+PW(g).s+(i+1)+
        '<span class="qf">'+qFormName(g,i)+'</span></button>';
   }
   document.getElementById("qtabs").innerHTML=h;
 
-  document.getElementById("pitchTitle").textContent="Quarter "+(ui.q+1);
+  document.getElementById("pitchTitle").textContent=PW(g).one+" "+(ui.q+1);
+  document.getElementById("allFormBtn").textContent="All "+PW(g).lows;
+  document.getElementById("allFormBtn").title="Use this "+PW(g).low+"'s formation for every "+PW(g).low;
+  document.getElementById("playedTitle").textContent=PW(g).many+" played";
 
   var fits=formationsFor(g.onField), fh="", fi, mixed=false;
   for(fi=0;fi<fits.length;fi++){
@@ -1801,17 +1859,17 @@ function renderPlan(){
       var r=c[1], seen={}, j;
       for(j=0;j<r.length;j++){
         if(!r[j]){ continue; }
-        if(seen[r[j]]){ warn.push("Q"+(q+1)+(c[0]?" "+c[0]:"")+": "+nameOf(r[j],g)+" twice."); }
+        if(seen[r[j]]){ warn.push(PW(g).s+(q+1)+(c[0]?" "+c[0]:"")+": "+nameOf(r[j],g)+" twice."); }
         seen[r[j]]=1;
       }
       var filled=r.filter(function(x){return x>0;}).length;
       if(filled>0 && filled<g.onField){
-        warn.push("Q"+(q+1)+(c[0]?" "+c[0]:"")+": "+filled+" of "+g.onField+" filled.");
+        warn.push(PW(g).s+(q+1)+(c[0]?" "+c[0]:"")+": "+filled+" of "+g.onField+" filled.");
       }
       var ff=qForm(g,q), gi2;
       for(gi2=0;gi2<ff.pos.length && gi2<g.onField;gi2++){
         if(ff.pos[gi2].z==="G" && filled>0 && !r[gi2]){
-          warn.push("Q"+(q+1)+(c[0]?" "+c[0]:"")+": no goalkeeper \u2014 set Goalie as a position in Setup.");
+          warn.push(PW(g).s+(q+1)+(c[0]?" "+c[0]:"")+": no goalkeeper \u2014 set Goalie as a position in Setup.");
         }
       }
     });
@@ -1825,7 +1883,7 @@ function renderPlan(){
     var showPrev=(ui.showPrev!==false);
     document.getElementById("prevBody").style.display=showPrev?"":"none";
     document.getElementById("prevToggle").textContent=showPrev?"Hide":"Show";
-    document.getElementById("prevTitle").textContent="For reference: Quarter "+ui.q+" ("+qFormName(g,ui.q-1)+")";
+    document.getElementById("prevTitle").textContent="For reference: "+PW(g).one+" "+ui.q+" ("+qFormName(g,ui.q-1)+")";
     if(showPrev){
       var prevRow=g.plan[ui.q-1]||[], nowRow=curRow(), pfPrev=qForm(g,ui.q-1), pfNow=qForm(g,ui.q), pi;
       document.getElementById("prevPitch").innerHTML=pitchSVG(g,prevRow,false,ui.q-1);
@@ -1859,12 +1917,12 @@ function renderPlan(){
 
   /* goal entry for the quarter being viewed */
   document.getElementById("goalQLabel").textContent=
-    "\u2014 quarter "+(ui.q+1);
+    "\u2014 "+PW(g).low+" "+(ui.q+1);
   var onNow=curRow();
   var gsorted=presentRoster(g).slice().sort(function(a,b){
     return a.name.localeCompare(b.name);
   });
-  var gh='<table><thead><tr><th>Player</th><th class="num">Q'+(ui.q+1)+'</th><th></th><th class="num">Game</th></tr></thead><tbody>';
+  var gh='<table><thead><tr><th>Player</th><th class="num">'+PW(g).s+(ui.q+1)+'</th><th></th><th class="num">Game</th></tr></thead><tbody>';
   for(i=0;i<gsorted.length;i++){
     var gp=gsorted[i], gq=goalsOf(g,gp.id,ui.q), gt=gameGoals(g,gp.id);
     var onField=onNow.indexOf(gp.id)>=0;
@@ -1881,7 +1939,7 @@ function renderPlan(){
   document.getElementById("goalTotalLine").textContent=
     "Score: "+S.cfg.team+" "+teamGoals(g)+" — "+(g.opp||"Opponent")+" "+
     (g.oppGoals===null?"not entered":g.oppGoals)+(resultNow?" ("+resultNow+")":"")+
-    ". Tap + on the quarter tab you are viewing.";
+    ". Tap + on the "+PW(g).low+" tab you are viewing.";
 
   var carry=seasonTotals(), tq=targetQtrs();
   var qc=gameQtrs(g);
@@ -1890,19 +1948,19 @@ function renderPlan(){
   }).sort(function(a,b){ return a.plays-b.plays || b.seasonSatQ-a.seasonSatQ; });
 
   h='<table><thead><tr><th style="text-align:center">Player</th>'+
-    '<th class="num" style="text-align:center">Quarters<br>playing</th>'+
-    '<th class="num" style="text-align:center">Quarters<br>sitting</th>'+
-    '<th class="num" style="text-align:center">Quarters sat<br>this season</th></tr></thead><tbody>';
+    '<th class="num" style="text-align:center">'+PW(g).many+'<br>playing</th>'+
+    '<th class="num" style="text-align:center">'+PW(g).many+'<br>sitting</th>'+
+    '<th class="num" style="text-align:center">Sat<br>this season</th></tr></thead><tbody>';
   for(i=0;i<rows.length;i++){
     var cls=rows[i].plays<tq-0.5?"short":(rows[i].plays>tq+0.5?"over":"");
     if(rows[i].avail<Q){ cls=""; }   /* left the game: not short of time */
-    h+='<tr class="'+cls+'"><td>'+esc(rows[i].p.name)+(rows[i].avail<Q?' <span class="hint" style="margin:0">(left from Q'+(rows[i].avail+1)+')</span>':'')+
+    h+='<tr class="'+cls+'"><td>'+esc(rows[i].p.name)+(rows[i].avail<Q?' <span class="hint" style="margin:0">(left from '+PW(g).s+(rows[i].avail+1)+')</span>':'')+
        '</td><td class="num" style="text-align:center">'+rows[i].plays+
        '</td><td class="num" style="text-align:center">'+Math.max(0,rows[i].avail-rows[i].plays)+
        '</td><td class="num" style="text-align:center">'+rows[i].seasonSatQ+'</td></tr>';
   }
   h+='</tbody></table>';
-  h+='<p class="hint">Quarters for the lineups as they stand now. Change a quarter and these update.</p>';
+  h+='<p class="hint">'+PW(g).many+' for the lineups as they stand now. Change a '+PW(g).low+' and these update.</p>';
   document.getElementById("planSits").innerHTML=h;
 }
 
@@ -1959,7 +2017,7 @@ function positionNote(p, st){
   if(p.p1 && p.p1===p.p2){ notes.push("secondary is the same as primary"); }
   if(outfield>=6){
     ["DEF","MID","FWD"].forEach(function(l){
-      if(!covered[l] && st[l]/outfield>=0.3){ notes.push("plays "+names[l]+" often ("+st[l]+" of "+outfield+" field quarters), which isn't in the settings"); }
+      if(!covered[l] && st[l]/outfield>=0.3){ notes.push("plays "+names[l]+" often ("+st[l]+" of "+outfield+" field "+seasonWords().lows+"), which isn't in the settings"); }
     });
   }
   return notes.join("; ");
@@ -1982,7 +2040,7 @@ function renderPositionStats(){
        '<td class="num">'+(s.GK||"")+'</td><td class="num">'+(s.DEF||"")+'</td><td class="num">'+(s.MID||"")+'</td><td class="num">'+(s.FWD||"")+'</td>'+
        '<td>'+esc(goalText(s.goals))+'</td><td>'+esc(zl[p.p1||""]+" / "+zl[p.p2||""])+'</td></tr>';
   }
-  h+='</tbody></table></div><p class="hint">Quarters at each line in played games, with goals scored from each. A note appears when a player often plays a line that neither of their positions in Setup covers.</p>';
+  h+='</tbody></table></div><p class="hint">'+seasonWords().many+' at each line in played games, with goals scored from each. A note appears when a player often plays a line that neither of their positions in Setup covers.</p>';
   box.innerHTML=h;
 }
 
@@ -1994,7 +2052,7 @@ function renderSeason(){
     S.games.length+" game"+(S.games.length===1?"":"s")+" saved"+
     (plannedCount?", "+plannedCount+" of them planned and not counted yet":"")+". "+
     (record.unknown?record.unknown+" saved game"+(record.unknown===1?" has":"s have")+" no opponent score and "+(record.unknown===1?"is":"are")+" excluded from the record. ":"")+
-    "Sorted by smallest share of available quarters played \u2014 missed games are excluded from the comparison.";
+    "Sorted by smallest share of available "+seasonWords().lows+" played \u2014 missed games are excluded from the comparison.";
   var active={}, currentIndex;
   for(currentIndex=0;currentIndex<S.roster.length;currentIndex++){ active[S.roster[currentIndex].id]=true; }
   var rows=seasonPlayers().map(function(p){
@@ -2008,7 +2066,7 @@ function renderSeason(){
   for(i=0;i<rows.length;i++){ if(rows[i].availQ>0){ avgRate+=rows[i].playRate; nR++; } }
   avgRate=nR?avgRate/nR:0;
 
-  h='<table><thead><tr><th>Player</th><th class="num">Games</th><th class="num">Qtrs</th><th class="num">Sat</th><th class="num">Missed</th><th class="num">vs avg</th><th class="num">Goals</th><th class="num">Mins</th></tr></thead><tbody>';
+  h='<table><thead><tr><th>Player</th><th class="num">Games</th><th class="num">Played</th><th class="num">Sat</th><th class="num">Missed</th><th class="num">vs avg</th><th class="num">Goals</th><th class="num">Mins</th></tr></thead><tbody>';
   for(i=0;i<rows.length;i++){
     /* expressed in quarters over this player's OWN available games */
     var d=(rows[i].playRate-avgRate)*(rows[i].availQ||0), cls="";
@@ -2048,6 +2106,7 @@ function renderSetup(){
   document.getElementById("cfgQ").value=S.cfg.quarters;
   document.getElementById("cfgMin").value=S.cfg.minutes;
   document.getElementById("cfgKeeper").value=S.cfg.keeperPlan||"halves";
+  document.getElementById("cfgAge").value="";
 
   var sizes=fieldSizes(), keys=formationsFor(S.cfg.onField), h="", i;
   for(i=0;i<sizes.length;i++){
@@ -2106,7 +2165,7 @@ function renderPrint(){
         ' &middot; OUT: '+esc(rosterNow.filter(function(p){return isOut(g,p.id);}).map(function(p){return p.name;}).join(", "))
         : '')+
       (rosterNow.some(function(p){ return leftFrom(g,p.id)>=0; }) ?
-        ' &middot; LEFT: '+esc(rosterNow.filter(function(p){ return leftFrom(g,p.id)>=0; }).map(function(p){ return p.name+" (Q"+(leftFrom(g,p.id)+1)+")"; }).join(", "))
+        ' &middot; LEFT: '+esc(rosterNow.filter(function(p){ return leftFrom(g,p.id)>=0; }).map(function(p){ return p.name+" ("+PW(g).s+(leftFrom(g,p.id)+1)+")"; }).join(", "))
         : '')+'</div></div>';
   }
 
@@ -2124,12 +2183,12 @@ function renderPrint(){
       var sa=availableQuarters(g,a.id)-(totals[a.id]||0), sb=availableQuarters(g,b.id)-(totals[b.id]||0);
       return sa-sb || a.name.localeCompare(b.name);
     });
-    d+='<aside class="psummary"><h5>Quarters sitting</h5><table class="psummary-table"><thead><tr><th>Player</th><th class="num">Sits</th></tr></thead><tbody>';
+    d+='<aside class="psummary"><h5>'+PW(g).many+' sitting</h5><table class="psummary-table"><thead><tr><th>Player</th><th class="num">Sits</th></tr></thead><tbody>';
     for(i=0;i<summaryRoster.length;i++){
       var player=summaryRoster[i];
       d+='<tr><td>'+esc(player.name)+'</td>';
       if(isOut(g,player.id)){ d+='<td class="outmark">OUT</td>'; }
-      else if(leftFrom(g,player.id)>=0){ d+='<td class="num">'+Math.max(0,availableQuarters(g,player.id)-(totals[player.id]||0))+' &middot; left Q'+(leftFrom(g,player.id)+1)+'</td>'; }
+      else if(leftFrom(g,player.id)>=0){ d+='<td class="num">'+Math.max(0,availableQuarters(g,player.id)-(totals[player.id]||0))+' &middot; left '+PW(g).s+(leftFrom(g,player.id)+1)+'</td>'; }
       else { d+='<td class="num">'+(Q-(totals[player.id]||0))+'</td>'; }
       d+='</tr>';
     }
@@ -2138,11 +2197,11 @@ function renderPrint(){
   }
 
   for(q=0;q<Q;q++){
-    h+='<section class="print-page">'+pageHead(q)+'<div class="pquarter-title">Q'+(q+1)+'</div>'+
+    h+='<section class="print-page">'+pageHead(q)+'<div class="pquarter-title">'+PW(g).s+(q+1)+'</div>'+
        '<div class="ppage-body"><div class="pmain pfield-single">'+pitchSVG(g,g.plan[q],false,q)+
-       '<div class="psit"><b>Sitting this quarter:</b> '+
+       '<div class="psit"><b>Sitting this '+PW(g).low+':</b> '+
        esc(presentInQ(g,q).filter(function(p){return g.plan[q].indexOf(p.id)<0;}).map(function(p){return p.name;}).join(", ")||"\u2014")+
-       '</div><div class="psit"><b>Q'+(q+1)+' goals:</b> ____</div></div>'+
+       '</div><div class="psit"><b>'+PW(g).s+(q+1)+' goals:</b> ____</div></div>'+
        '<div class="pside">'+sitDock()+notesBlock()+'</div></div></section>';
   }
 

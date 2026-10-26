@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>SoccerLineup</title>
 <meta name="theme-color" content="#13201B">
-<meta name="description" content="Plan fair soccer lineups quarter by quarter.">
+<meta name="description" content="Plan fair youth soccer lineups, quarter by quarter or half by half.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -55,7 +55,7 @@
     <div class="row" style="margin-top:8px">
       <span class="hint" style="margin:0">Left during the game (hurt, picked up early)?</span>
       <select id="leftWho" class="qform" aria-label="Player who left"></select>
-      <select id="leftFrom" class="qform" aria-label="Quarter they left"></select>
+      <select id="leftFrom" class="qform" aria-label="When they left"></select>
       <button class="btn sm" onclick="markLeft()">Mark</button>
     </div>
     <div class="chips" id="leftChips"></div>
@@ -67,8 +67,8 @@
     <div class="row spread" style="margin-bottom:8px">
       <h2 id="pitchTitle">Quarter 1</h2>
       <div class="row">
-        <select id="qFormation" class="qform" aria-label="Formation for this quarter" onchange="setQuarterFormation(this.value)"></select>
-        <button class="btn sm quiet" id="allFormBtn" onclick="useFormationForAllQuarters()" title="Use this quarter's formation for every quarter" hidden>All quarters</button>
+        <select id="qFormation" class="qform" aria-label="Formation for this part of the game" onchange="setQuarterFormation(this.value)"></select>
+        <button class="btn sm quiet" id="allFormBtn" onclick="useFormationForAllQuarters()" title="Use this formation for the whole game" hidden>All quarters</button>
         <button class="btn sm green" onclick="autoFillQuarter()">Auto-fill</button>
         <button class="btn sm quiet" onclick="clearQuarter()">Clear</button>
         <button class="btn sm quiet undoBtn" onclick="undoLastChange()" disabled>Undo</button>
@@ -96,7 +96,7 @@
       <div class="benchcol" id="benchRight"></div>
     </div>
 
-    <p class="hint">Drag a player onto a position, or tap one then the other. The menu above picks this quarter's formation; players already placed move to the closest positions.</p>
+    <p class="hint">Drag a player onto a position, or tap one then the other. The menu above sets the formation for the one you're viewing; players already placed move to the closest positions.</p>
     <p class="warn" id="planWarn"></p>
 
   </div>
@@ -117,12 +117,12 @@
     <textarea id="fNotes" rows="4" placeholder="Reminders for this game — who to watch, what to work on, what happened."
       style="width:100%;font:inherit;padding:9px;border:1px solid var(--line);border-radius:8px;resize:vertical"
       onchange="setGameField('notes',this.value)"></textarea>
-    <p class="hint">Prints on every quarter page.</p>
+    <p class="hint">Prints on every page.</p>
     <div id="oppNotes" hidden></div>
   </div>
 
   <div class="card">
-    <h2>Quarters played</h2>
+    <h2 id="playedTitle">Quarters played</h2>
     <div id="planSits"></div>
   </div>
 
@@ -178,10 +178,18 @@
   <div class="card">
     <h2>Match format</h2>
     <div class="row" style="margin-top:6px">
+      <label class="field">Age group<select id="cfgAge" onchange="applyAgePreset(this.value)">
+        <option value="">Fill in the format for an age group&hellip;</option>
+        <option value="u10">U9&ndash;U10: 7v7, 4 &times; 12 min</option>
+        <option value="u12">U11&ndash;U12: 9v9, 2 &times; 30 min</option>
+        <option value="u13">U13 and older: 11v11, 2 &times; 35 min</option>
+      </select></label>
+    </div>
+    <div class="row" style="margin-top:6px">
       <label class="field">Team<input id="cfgTeam" onchange="saveCfg()"></label>
       <label class="field">Players on field<select id="cfgSize" onchange="setFieldSize(this.value)"></select></label>
       <label class="field">Default formation<select id="cfgFormation" onchange="setDefaultFormation(this.value)"></select></label>
-      <label class="field">Quarters<input type="number" id="cfgQ" min="2" max="4" onchange="saveCfg()"></label>
+      <label class="field">Periods<input type="number" id="cfgQ" min="2" max="4" onchange="saveCfg()" title="2 for halves, 4 for quarters"></label>
       <label class="field">Minutes<input type="number" id="cfgMin" min="5" max="45" onchange="saveCfg()"></label>
       <label class="field">Goalkeepers<select id="cfgKeeper" onchange="setKeeperPlan(this.value)">
         <option value="halves">Switch at halftime, GK 1 first</option>
@@ -189,7 +197,7 @@
         <option value="middle">GK 1 starts and finishes, GK 2 the middle</option>
       </select></label>
     </div>
-    <p class="hint">Changing the number of players on the field clears the game you're currently planning, since the positions change. The default formation is what every new game starts with; each quarter can use a different formation from the menu on the Plan tab. Goalkeepers: with "Switch at halftime", auto-fill gives GK 1 and GK 2 a half each; "taking turns" starts whoever has kept goal first in fewer games this season.</p>
+    <p class="hint">Leagues differ, so check the age-group numbers against yours and change any of them below. Periods: 2 for halves, 4 for quarters. Changing the number of players on the field clears the game you're currently planning, since the positions change. The default formation is what every new game starts with; each quarter can use a different formation from the menu on the Plan tab. Goalkeepers: with "Switch at halftime", auto-fill gives GK 1 and GK 2 a half each; "taking turns" starts whoever has kept goal first in fewer games this season.</p>
   </div>
 
   <div class="card">

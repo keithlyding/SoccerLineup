@@ -186,7 +186,7 @@ function assert(cond, msg) {
   assert(st.cfg === '4-1-3' && st.cur.every(f => f === '4-1-3') && st.saved[0] === '2-3-3', 'default formation applies to the empty game, not saved games');
 
   const sizeOpts = await page.$$eval('#cfgSize option', os => os.map(o => o.value));
-  assert(sizeOpts.join(',') === '9,8,7', 'players-on-field menu offers 9, 8 and 7');
+  assert(sizeOpts.join(',') === '11,9,8,7', 'players-on-field menu offers 11, 9, 8 and 7');
   await page.selectOption('#cfgSize', '8');
   st = await page.evaluate(() => Array.from(document.querySelectorAll('#cfgFormation option')).map(o => o.value).join(','));
   assert(st === '2-3-2,3-3-1,3-2-2', '8v8 formations: ' + st);

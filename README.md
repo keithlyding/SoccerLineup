@@ -1,6 +1,6 @@
 # SoccerLineup
 
-Plan fair soccer lineups quarter by quarter: who plays, who sits, and where,
+Plan fair youth soccer lineups, quarter by quarter or half by half: who plays, who sits, and where,
 with a different formation each quarter if you want. The season is kept on
 your own Home Assistant server, or in your own browser; nothing goes to
 anyone else's servers.
@@ -70,10 +70,24 @@ all: nothing to install, no account, and the season stays in that browser.
 
 Moving to Home Assistant later is one backup and one restore.
 
-## Formations
+## Age groups and formations
 
-Setup picks how many players are on the field and the default formation.
-Each quarter's formation is picked on the Plan tab.
+Setup has an **Age group** shortcut that fills in the match format. Leagues
+differ, so check it against yours; every number stays editable.
+
+| Age group | Players on the field | Periods | Formations |
+| --- | --- | --- | --- |
+| U9-U10 | 7v7 | 4 quarters of 12 min | 3-2-1, 2-3-1, 2-1-2-1 |
+| U11-U12 | 9v9 | 2 halves of 30 min | 3-3-2, 4-1-3, 4-2-2, 3-2-3, 2-3-3, 3-1-3-1, 3-4-1, 4-3-1 |
+| U13 and older | 11v11 | 2 halves of 35 min | 4-4-2, 4-3-3, 4-2-3-1, 4-1-4-1, 4-5-1, 3-5-2, 3-4-3, 5-3-2 |
+
+8v8 (2-3-2, 3-3-1, 3-2-2) is there too. The players-on-field sizes follow
+U.S. Soccer's age formats; the game lengths come from one state's
+recreational rules. Set **Periods** to 2 for halves or 4 for quarters, and
+the app says halves (H1, H2) or quarters (Q1 to Q4) throughout, including on
+the print-outs.
+
+Each quarter's or half's formation is picked on the Plan tab.
 
 To add a formation, add one line near the top of
 `custom_components/soccerlineup/frontend/app.js`, next to the others:
