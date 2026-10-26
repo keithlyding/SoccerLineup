@@ -13,7 +13,10 @@ permissions:
 jobs:
   browser:
     name: App in the browser
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.56.1 (package.json) can't install browsers on
+    # Ubuntu 26.04, which ubuntu-latest became in October 2026. Move to
+    # ubuntu-latest together with a Playwright upgrade.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
@@ -30,7 +33,7 @@ jobs:
 
   home-assistant:
     name: Home Assistant
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # pinned for Playwright, see the browser job
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
