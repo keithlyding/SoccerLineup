@@ -69,6 +69,7 @@ label.check[hidden]{display:none}
   font-size:14px;font-weight:700;box-shadow:0 6px 20px rgba(0,0,0,.25);
 }
 .toast[hidden]{display:none}
+.toast.second{bottom:76px;flex-wrap:wrap}
 label.field{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:700;color:var(--ink-soft)}
 select.qform{min-height:36px;padding:4px 8px;font-size:13px;font-weight:800}
 

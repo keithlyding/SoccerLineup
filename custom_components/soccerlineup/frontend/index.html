@@ -25,6 +25,11 @@
 </div>
 
 <div id="ghost"></div>
+<div class="toast second" id="backupToast" role="status" hidden>
+  <span id="backupToastText"></span>
+  <button class="btn sm green" onclick="exportData()">Save backup</button>
+  <button class="btn sm quiet" onclick="hideBackupToast()">Not now</button>
+</div>
 <div class="toast" id="updateToast" role="status" hidden>
   <span>A new version of the app is ready.</span>
   <button class="btn sm green" onclick="location.reload()">Reload</button>
@@ -46,11 +51,11 @@
     <p class="hint" id="gameStatus"></p>
     <h3 style="margin-top:10px">Who is here today -- click on players to mark absent</h3>
     <div class="chips" id="availChips"></div>
-    <p class="hint">Tap a name to mark her out for this game. Missed games do not count against her playing time.</p>
+    <p class="hint">Tap a name to mark a player out for this game. Missed games do not count against their playing time.</p>
     <div class="row" style="margin-top:8px">
       <span class="hint" style="margin:0">Left during the game (hurt, picked up early)?</span>
       <select id="leftWho" class="qform" aria-label="Player who left"></select>
-      <select id="leftFrom" class="qform" aria-label="Quarter she left"></select>
+      <select id="leftFrom" class="qform" aria-label="Quarter they left"></select>
       <button class="btn sm" onclick="markLeft()">Mark</button>
     </div>
     <div class="chips" id="leftChips"></div>
@@ -154,18 +159,18 @@
   <div class="card">
     <h2>Backup and transfer</h2>
     <div class="row">
-      <button class="btn" onclick="exportData()">Download backup</button>
+      <button class="btn" id="backupBtn" onclick="exportData()">Download backup</button>
       <button class="btn" onclick="document.getElementById('importFile').click()">Restore from backup</button>
       <input type="file" id="importFile" accept=".json,application/json,text/plain" hidden onchange="importData(event)">
     </div>
-    <label class="check" id="autoBackupRow"><input type="checkbox" id="cfgAutoBackup" onchange="setAutoBackup(this.checked)"> Download a backup every time I save a game</label>
+    <label class="check" id="autoBackupRow"><input type="checkbox" id="cfgAutoBackup" onchange="setAutoBackup(this.checked)"><span id="autoBackupText"> Download a backup every time I save a game</span></label>
     <p class="hint" id="backupStatus"></p>
     <div id="haHistory" hidden>
       <h3 style="margin-top:12px">Earlier versions on Home Assistant</h3>
       <button class="btn sm" id="haHistoryBtn" onclick="haShowHistory()">Show earlier versions</button>
       <div id="haHistoryList"></div>
     </div>
-    <p class="hint">The downloaded JSON file contains your team setup, roster, player settings, attendance, current lineup, saved games, and goals. You can restore it in SoccerLineup on another browser or device, or after this browser's stored data has been cleared. Restoring replaces the SoccerLineup data currently stored in that browser.</p>
+    <p class="hint">The backup file contains your team setup, roster, player settings, attendance, current lineup, saved games, and goals. You can restore it in SoccerLineup on another browser or device, or after this browser's stored data has been cleared. Restoring replaces the SoccerLineup data currently stored in that browser.</p>
   </div>
 </section>
 

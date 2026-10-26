@@ -20,6 +20,9 @@ function assert(cond, msg) {
   const server = await startServer(0, '');
   const browser = await setup.type.launch();
   const context = await browser.newContext(setup.contextOptions);
+  // These checks cover the download path; the phone share-sheet path has
+  // its own test (tests/backup.test.js), so take sharing away here.
+  await context.addInitScript(() => { try { delete Navigator.prototype.share; delete Navigator.prototype.canShare; } catch (e) {} });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));

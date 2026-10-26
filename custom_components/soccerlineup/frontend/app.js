@@ -1398,6 +1398,7 @@ function archiveGame(){
   if(ui.editId){
     save();
     if(HA){ alert("Changes saved."); return; }
+    if(S.cfg.autoBackup && usesShareSheet()){ showBackupToast("Changes saved. Save a backup copy?"); return; }
     if(S.cfg.autoBackup){ exportData(); }
     alert("Changes saved."+(S.cfg.autoBackup?" A backup file was downloaded too.":""));
     return;
@@ -1417,7 +1418,10 @@ function archiveGame(){
   ui.q=0;
   save();
   if(!HA){
-    if(S.cfg.autoBackup){ exportData(); }
+    if(S.cfg.autoBackup){
+      if(usesShareSheet()){ showBackupToast("Game saved. Save a backup copy?"); }
+      else { exportData(); }
+    }
     askForPersistentStorage();
   }
   showTab("season");
@@ -1461,7 +1465,7 @@ function addPlayer(){
   save(); render();
 }
 function delPlayer(id){
-  if(!confirm("Remove "+nameOf(id)+" from the active roster? This removes her from the current game's lineups and goals. Saved games and season history will stay intact.")){ return; }
+  if(!confirm("Remove "+nameOf(id)+" from the active roster? This removes them from the current game's lineups and goals. Saved games and season history will stay intact.")){ return; }
   discardUndoForGame(S.current);
   S.roster=S.roster.filter(function(p){return p.id!==id;});
   var g=S.current, q, j;
@@ -1502,22 +1506,73 @@ function saveCfg(){
   if(ui.q>lastQ()){ ui.q=lastQ(); }
   save(); render();
 }
-function exportData(){
-  S.lastBackupAt=new Date().toISOString();
-  save();
+function backupFileName(){
+  var team=(S.cfg.team||"Team").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
+  return (team||"Team")+"-SoccerLineup-backup-"+todayISO()+".json";
+}
+function backupText(stamp){
   var backup=JSON.parse(JSON.stringify(S));
-  backup.backupInfo={app:"SoccerLineup",formatVersion:1,exportedAt:S.lastBackupAt};
-  var blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json"});
+  backup.lastBackupAt=stamp;
+  backup.backupInfo={app:"SoccerLineup",formatVersion:1,exportedAt:stamp};
+  return JSON.stringify(backup,null,2);
+}
+/* Phones and tablets save backups through the share sheet (Save to Files,
+   AirDrop, Mail, Messages): iPhone Safari may block a download that a page
+   starts. Computers download as usual. Returns the file to share, or null
+   to download instead. */
+function shareableBackup(text){
+  try{
+    if(!navigator.share || !navigator.canShare || !window.File){ return null; }
+    if(!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches)){ return null; }
+    var types=["application/json","text/plain"], i, file;
+    for(i=0;i<types.length;i++){
+      file=new File([text], backupFileName(), {type:types[i]});
+      if(navigator.canShare({files:[file]})){ return file; }
+    }
+  }catch(e){}
+  return null;
+}
+function usesShareSheet(){ return !!shareableBackup("{}"); }
+function exportData(){
+  var stamp=new Date().toISOString(), text=backupText(stamp), file=shareableBackup(text);
+  if(file){
+    navigator.share({files:[file], title:file.name}).then(function(){
+      hideBackupToast();
+      backupSaved(stamp);
+    }, function(err){
+      if(err && err.name==="AbortError"){ return; }   /* closed the share sheet */
+      /* usually: the phone wants a fresh tap before sharing */
+      showBackupToast("Tap Save backup to keep a copy.");
+    });
+    return;
+  }
+  var blob=new Blob([text],{type:"application/json"});
   var a=document.createElement("a"), url=URL.createObjectURL(blob);
   a.href=url;
-  var team=(S.cfg.team||"Team").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
-  a.download=(team||"Team")+"-SoccerLineup-backup-"+todayISO()+".json";
+  a.download=backupFileName();
   document.body.appendChild(a);
   a.click();
   /* some browsers start the download after click() returns, so release the
      file a little later rather than immediately */
   setTimeout(function(){ URL.revokeObjectURL(url); if(a.parentNode){ a.parentNode.removeChild(a); } },4000);
+  backupSaved(stamp);
+}
+function backupSaved(stamp){
+  S.lastBackupAt=stamp;
+  save();
   renderBackupStatus();
+}
+/* After saving a game on a phone: a button to save the backup, since the
+   share sheet has to open from a tap. */
+function showBackupToast(message){
+  var t=document.getElementById("backupToast");
+  if(!t){ return; }
+  document.getElementById("backupToastText").textContent=message;
+  t.hidden=false;
+}
+function hideBackupToast(){
+  var t=document.getElementById("backupToast");
+  if(t){ t.hidden=true; }
 }
 function setAutoBackup(on){
   S.cfg.autoBackup=!!on;
@@ -1526,6 +1581,9 @@ function setAutoBackup(on){
 function renderBackupStatus(){
   var el=document.getElementById("backupStatus"), box=document.getElementById("cfgAutoBackup");
   if(box){ box.checked=!!S.cfg.autoBackup; }
+  var phone=usesShareSheet(), btn=document.getElementById("backupBtn"), lbl=document.getElementById("autoBackupText");
+  if(btn){ btn.textContent=phone?"Save backup":"Download backup"; }
+  if(lbl){ lbl.textContent=phone?" Offer to save a backup every time I save a game":" Download a backup every time I save a game"; }
   if(!el){ return; }
   if(HA){ haRenderBackupStatus(el); return; }
   var when=S.lastBackupAt?new Date(S.lastBackupAt):null, stale=false, text;
@@ -1924,7 +1982,7 @@ function renderPositionStats(){
        '<td class="num">'+(s.GK||"")+'</td><td class="num">'+(s.DEF||"")+'</td><td class="num">'+(s.MID||"")+'</td><td class="num">'+(s.FWD||"")+'</td>'+
        '<td>'+esc(goalText(s.goals))+'</td><td>'+esc(zl[p.p1||""]+" / "+zl[p.p2||""])+'</td></tr>';
   }
-  h+='</tbody></table></div><p class="hint">Quarters at each line in played games, with goals scored from each. A note appears when a player often plays a line that neither of her positions in Setup covers.</p>';
+  h+='</tbody></table></div><p class="hint">Quarters at each line in played games, with goals scored from each. A note appears when a player often plays a line that neither of their positions in Setup covers.</p>';
   box.innerHTML=h;
 }
 

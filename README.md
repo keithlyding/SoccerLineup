@@ -46,20 +46,29 @@ Home Assistant can open and change the lineups.
 On a phone, the **&#9776;** button at the top left opens Home Assistant's
 sidebar.
 
-## Using it on its own
+## Using it on its own (no Home Assistant)
 
-- **On the web:** turn on GitHub Pages (Settings, Pages, Deploy from a
-  branch, `main`, `/ (root)`), then open
-  `https://keithlyding.github.io/SoccerLineup/`.
-- **From a folder:** download the repository and open `index.html`. Every
-  feature works except offline mode, which needs the web address.
-- **On a phone's Home Screen:** open the web address in Safari, tap Share,
-  then **Add to Home Screen** (Android: Chrome menu, **Install app**).
+Open **https://keithlyding.github.io/SoccerLineup/** in any browser. That's
+all: nothing to install, no account, and the season stays in that browser.
 
-Saved games stay in the browser that saved them, so use **Download backup**
-and **Restore from backup** on the Season tab to move them. The Season tab
-can download a backup every time a game is saved, and shows when the last
-one was made.
+- **On a phone,** add it to the Home Screen so it opens like an app and
+  works with no signal: in Safari tap Share, then **Add to Home Screen**
+  (Android: Chrome menu, **Install app**).
+- **From a folder:** download the repository and open `index.html`.
+  Everything works except offline mode, which needs the web address.
+
+**Backups.** Each browser keeps its own copy of the season, so keep backups:
+
+- On a computer, **Season, Download backup** saves a file. By default a
+  backup also downloads every time you save a game.
+- On a phone, **Season, Save backup** opens the share sheet: choose
+  **Save to Files** (or iCloud Drive, AirDrop, email). After you save a game,
+  a **Save backup** button offers the same.
+- **Restore from backup** on the Season tab brings a backup back, on the
+  same device or a new one. The Season tab shows when the last backup was
+  made, and turns orange when that was more than two weeks ago.
+
+Moving to Home Assistant later is one backup and one restore.
 
 ## Formations
 
