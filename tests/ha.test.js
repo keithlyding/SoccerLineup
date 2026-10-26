@@ -17,11 +17,15 @@ function assert(cond, msg) {
   passed++; console.log('ok  ' + msg);
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+let explain = null;   // set once the devices exist: describes their sync state on a timeout
 async function until(fn, what, ms = 8000) {
   const end = Date.now() + ms;
   for (;;) {
     try { if (await fn()) return; } catch (e) { /* not ready yet */ }
-    if (Date.now() > end) throw new Error('FAILED: timed out waiting for ' + what);
+    if (Date.now() > end) {
+      const state = explain ? await explain().catch(e => 'could not read: ' + e.message) : '';
+      throw new Error('FAILED: timed out waiting for ' + what + (state ? '. State: ' + state : ''));
+    }
     await sleep(100);
   }
 }
@@ -129,7 +133,15 @@ function handle(dev, msg) {
   assert(HAS.history.some(v => v.reason === 'import'), 'the season before the restore is kept in history');
 
   // ---------- a second device sees it, and changes flow both ways ----------
+  const phoneDialogs = [];
   const phone = await openDevice('Phone', true, phoneOptions);
+  explain = async () => JSON.stringify({
+    server: { rev: HAS.rev, opp: HAS.data && HAS.data.current.opp },
+    phone: await phone.frame.evaluate(() => ({ rev: sync.rev, pending: sync.pending, inFlight: sync.inFlight, resolving: sync.resolving,
+      skipped: !!sync.skipped, status: sync.status, opp: S.current.opp })),
+    laptop: await laptop.frame.evaluate(() => ({ rev: sync.rev, pending: sync.pending, status: sync.status, opp: S.current.opp })),
+    phoneDialogs: phoneDialogs.length
+  });
   await until(async () => (await phone.frame.evaluate(() => S.roster.length)) === 11, 'the phone to load the season');
   assert((await phone.frame.evaluate(() => S.cfg.team)) === 'Panthers', 'the phone shows the same season as the laptop');
 
@@ -156,7 +168,6 @@ function handle(dev, msg) {
   await sleep(600);
   assert((await status(phone)) === 'Offline — changes will be sent', 'offline, the phone says its changes will be sent');
   assert(HAS.data.current.opp !== 'Offline edit', 'offline changes stay on the phone until it reconnects');
-  const phoneDialogs = [];
   phone.page.on('dialog', d => { phoneDialogs.push(d.message()); d.accept(); });
   await phone.page.evaluate(() => goOnline());
   await until(async () => HAS.data.current.opp === 'Offline edit', 'the offline change to be sent');
