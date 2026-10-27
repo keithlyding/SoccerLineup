@@ -107,6 +107,68 @@ function buildFormation(name){
 }
 function addFormation(name){ FORMATIONS[name]=buildFormation(name); }
 
+/* ---------- playing short ---------- */
+/* The coach's choice of spot to leave open in quarter q (or for the game) */
+function leaveOpenKey(g, q){
+  var lo=g.leaveOpen||{}, key=(lo[q]!==undefined && lo[q]!=="") ? lo[q] : lo.any, f=qForm(g,q), i;
+  if(!key){ return null; }
+  for(i=0;i<f.pos.length;i++){ if(f.pos[i].k===key && f.pos[i].z!=="G"){ return key; } }
+  return null;
+}
+/* Which outfield slot indexes to leave open when `count` spots can't be filled */
+function openSpotsFor(g, q, count){
+  var f=qForm(g,q), slots=[], out=[], pref=leaveOpenKey(g,q), i, lineSize={};
+  for(i=0;i<f.pos.length && i<g.onField;i++){
+    if(f.pos[i].z==="G"){ continue; }
+    slots.push(i);
+    lineSize[lineGroup(f.pos[i].z)]=(lineSize[lineGroup(f.pos[i].z)]||0)+1;
+  }
+  var rank={F:0, M:1, D:2};
+  while(out.length<count && out.length<slots.length){
+    var best=-1, bestScore=1e9;
+    for(i=0;i<slots.length;i++){
+      var s=slots[i], p=f.pos[s], line=lineGroup(p.z);
+      if(out.indexOf(s)>=0){ continue; }
+      var score;
+      if(pref && p.k===pref && out.length===0){ score=-1; }
+      else{
+        /* keep one in every line while that's possible */
+        score=(lineSize[line]>1 ? 0 : 100)+rank[line]*10+p.imp;
+      }
+      if(score<bestScore){ bestScore=score; best=s; }
+    }
+    if(best<0){ break; }
+    out.push(best);
+    lineSize[lineGroup(f.pos[best].z)]--;
+  }
+  return out;
+}
+/* Plan: choose which spot stays open while playing short. The player in it
+   moves to the spot that is open now; auto-fill keeps this choice for the
+   rest of the game. */
+function setOpenSpot(key){
+  var g=G(), q=ui.q, f=qForm(g,q), row=g.plan[q], target=-1, empty=-1, i;
+  if(!key){ return; }
+  for(i=0;i<f.pos.length && i<g.onField;i++){
+    if(f.pos[i].k===key){ target=i; }
+  }
+  for(i=0;i<f.pos.length && i<g.onField;i++){
+    if(i!==target && f.pos[i].z!=="G" && !row[i]){ empty=i; break; }
+  }
+  rememberGameChange("leave "+key+" open");
+  if(!g.leaveOpen){ g.leaveOpen={}; }
+  g.leaveOpen[q]=key;
+  g.leaveOpen.any=key;
+  if(target>=0 && row[target] && empty>=0){ row[empty]=row[target]; row[target]=0; }
+  ui.selSlot=-1; ui.selPlayer=0;
+  save(); render();
+}
+function shortInfo(g, q){
+  var f=qForm(g,q), row=g.plan[q]||[], open=[], i, by=g.onField-presentInQ(g,q).length;
+  for(i=0;i<f.pos.length && i<g.onField;i++){ if(f.pos[i].z!=="G" && !row[i]){ open.push(f.pos[i].k); } }
+  return {by:Math.max(0,by), open:open};
+}
+
 /* 9v9 */
 addFormation("3-4-1");
 addFormation("4-3-1");
@@ -116,6 +178,13 @@ addFormation("3-2-2");
 /* 7v7 */
 addFormation("2-3-1");
 addFormation("2-1-2-1");
+/* 10v10 (a few leagues, e.g. some U14 rec) */
+addFormation("4-3-2");
+addFormation("3-4-2");
+addFormation("4-4-1");
+addFormation("3-3-3");
+addFormation("4-2-3");
+addFormation("4-1-3-1");
 /* 11v11 (U13 and older) */
 addFormation("4-4-2");
 addFormation("4-3-3");
@@ -216,7 +285,7 @@ function newGame(){
     formation:S.cfg.formation, onField:S.cfg.onField,
     formations:defaultFormations(S.cfg.quarters,S.cfg.formation),
     plan:blankPlan(),
-    goals:{}, oppGoals:null, out:{}, left:{}
+    goals:{}, oppGoals:null, out:{}, left:{}, leaveOpen:{}
   };
 }
 
@@ -318,6 +387,7 @@ function normalizeGame(g, saved){
   }
   if(!g.out){ g.out={}; }
   if(!g.left){ g.left={}; }
+  if(!g.leaveOpen){ g.leaveOpen={}; }
   if(g.notes===undefined || g.notes===null){ g.notes=""; }
   /* A saved game dated after today with no score yet was planned ahead and
      hasn't been played: it doesn't count toward the season until it is. */
@@ -347,7 +417,7 @@ function normalizeState(st){
   S.schemaVersion=7;
   normalizeRoster(S.roster);
   if(S.cfg.autoBackup===undefined){ S.cfg.autoBackup=true; }
-  if(["halves","turns","middle"].indexOf(S.cfg.keeperPlan)<0){ S.cfg.keeperPlan="halves"; }
+  if(["halves","turns","middle","whole"].indexOf(S.cfg.keeperPlan)<0){ S.cfg.keeperPlan="halves"; }
   if(!formationsFor(S.cfg.onField).length){ S.cfg.onField=9; }
   if(!FORMATIONS[S.cfg.formation] || FORMATIONS[S.cfg.formation].n!==S.cfg.onField){
     S.cfg.formation=formationsFor(S.cfg.onField)[0];
@@ -909,6 +979,16 @@ function fillRowSmart(availIds, preferredKeeperId, balanceUnits){
     return row;
   }
 
+  /* Playing short: fewer players than outfield spots. Leave open the spot the
+     coach chose (see setOpenSpot), otherwise drop from the front: a forward
+     first, then a midfielder, then a defender, always keeping at least one
+     player in every line, and the least important spot within a line. */
+  var spare=outSlots.length-avail.length;
+  if(spare>0){
+    var dropped=openSpotsFor(g,ui.q,spare);
+    outSlots=outSlots.filter(function(x){ return dropped.indexOf(x)<0; });
+  }
+
   var open=outSlots.slice();
   if(balanceUnits){
     var balanced=fillOutfieldBalanced(avail,open,f,g,seasonPos,currentPos);
@@ -1170,7 +1250,7 @@ function applyAgePreset(v){
   save(); render();
 }
 function setKeeperPlan(v){
-  S.cfg.keeperPlan=(["halves","turns","middle"].indexOf(v)>=0)?v:"halves";
+  S.cfg.keeperPlan=(["halves","turns","middle","whole"].indexOf(v)>=0)?v:"halves";
   save(); render();
 }
 
@@ -1184,7 +1264,11 @@ function autoFillQuarter(){
   var sitMode = (q===0) ? "strong" : "mixed";
 
   var pk=primaryKeeper(), bk=backupKeeper(), wantedKeeper;
-  if(S.cfg.keeperPlan==="middle"){
+  if(S.cfg.keeperPlan==="whole"){
+    /* GK 1 the whole game; GK 2 only when GK 1 is out or has left the game
+       (primaryKeeper is the first keeper available this quarter) */
+    wantedKeeper=pk;
+  }else if(S.cfg.keeperPlan==="middle"){
     /* GK 1 starts and finishes; GK 2 takes the middle quarters */
     wantedKeeper=(q===0 || isLastQ()) ? pk : (bk||pk);
   }else{
@@ -1786,7 +1870,8 @@ function renderPlan(){
   document.getElementById("gameStatus").textContent=
     presNow.length+" available"+(outCount?" ("+outCount+" out)":"")+(leftNames.length?", left the game: "+leftNames.join(", "):"")+", "+g.onField+" on \u2014 "+
     Math.max(0,presNow.length-g.onField)+" sit each "+PW(g).low+". Equal share is "+
-    (presNow.length?((g.onField*g.nq)/presNow.length).toFixed(2):"0")+" "+PW(g).lows+".";
+    (presNow.length?((g.onField*g.nq)/presNow.length).toFixed(2):"0")+" "+PW(g).lows+"."+
+    (presNow.length<g.onField?" Playing "+(g.onField-presNow.length)+" short.":"");
 
   var ah="", ai2;
   var alpha=rosterNow.slice().sort(function(a,b){ return a.name.localeCompare(b.name); });
@@ -1834,6 +1919,19 @@ function renderPlan(){
   for(q=0;q<Q;q++){ if(qFormName(g,q)!==qFormName(g,ui.q)){ mixed=true; } }
   document.getElementById("allFormBtn").hidden=!mixed;
 
+  var sh=shortInfo(g,ui.q), shortRow=document.getElementById("shortRow");
+  shortRow.hidden=!(sh.by>0);
+  if(sh.by>0){
+    var fq=qForm(g,ui.q), so=sh.open.length?'':'<option value="" selected>choose&hellip;</option>', si;
+    for(si=0;si<fq.pos.length && si<g.onField;si++){
+      if(fq.pos[si].z==="G"){ continue; }
+      so+='<option value="'+fq.pos[si].k+'"'+(sh.open[0]===fq.pos[si].k?" selected":"")+'>'+fq.pos[si].k+'</option>';
+    }
+    document.getElementById("shortText").textContent="Playing "+sh.by+" short this "+PW(g).low+
+      (sh.open.length?" ("+sh.open.join(", ")+" open).":".");
+    document.getElementById("shortSpot").innerHTML=so;
+  }
+
   document.getElementById("pitchSvg").outerHTML=
     pitchSVG(g,curRow(),true,ui.q).replace('<svg ','<svg class="pitch" id="pitchSvg" ');
 
@@ -1863,7 +1961,7 @@ function renderPlan(){
         seen[r[j]]=1;
       }
       var filled=r.filter(function(x){return x>0;}).length;
-      if(filled>0 && filled<g.onField){
+      if(filled>0 && filled<g.onField && filled<presentInQ(g,q).length){
         warn.push(PW(g).s+(q+1)+(c[0]?" "+c[0]:"")+": "+filled+" of "+g.onField+" filled.");
       }
       var ff=qForm(g,q), gi2;
@@ -2201,7 +2299,8 @@ function renderPrint(){
        '<div class="ppage-body"><div class="pmain pfield-single">'+pitchSVG(g,g.plan[q],false,q)+
        '<div class="psit"><b>Sitting this '+PW(g).low+':</b> '+
        esc(presentInQ(g,q).filter(function(p){return g.plan[q].indexOf(p.id)<0;}).map(function(p){return p.name;}).join(", ")||"\u2014")+
-       '</div><div class="psit"><b>'+PW(g).s+(q+1)+' goals:</b> ____</div></div>'+
+       '</div>'+(shortInfo(g,q).by>0?'<div class="psit"><b>Playing '+shortInfo(g,q).by+' short:</b> '+esc(shortInfo(g,q).open.join(", ")||"\u2014")+' open</div>':'')+
+       '<div class="psit"><b>'+PW(g).s+(q+1)+' goals:</b> ____</div></div>'+
        '<div class="pside">'+sitDock()+notesBlock()+'</div></div></section>';
   }
 

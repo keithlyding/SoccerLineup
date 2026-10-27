@@ -74,6 +74,10 @@
         <button class="btn sm quiet undoBtn" onclick="undoLastChange()" disabled>Undo</button>
       </div>
     </div>
+    <div class="row" id="shortRow" style="margin-bottom:8px" hidden>
+      <span class="warn" style="margin:0" id="shortText"></span>
+      <label class="hint" style="margin:0">Leave open <select id="shortSpot" class="qform" aria-label="Spot to leave open" onchange="setOpenSpot(this.value)"></select></label>
+    </div>
 
     <div class="benchstrip">
       <div class="benchhdr" id="benchHdr">Sitting</div>
@@ -195,6 +199,7 @@
         <option value="halves">Switch at halftime, GK 1 first</option>
         <option value="turns">Switch at halftime, taking turns starting</option>
         <option value="middle">GK 1 starts and finishes, GK 2 the middle</option>
+        <option value="whole">GK 1 the whole game (GK 2 only if GK 1 is out)</option>
       </select></label>
     </div>
     <p class="hint">Leagues differ, so check the age-group numbers against yours and change any of them below. Periods: 2 for halves, 4 for quarters. Changing the number of players on the field clears the game you're currently planning, since the positions change. The default formation is what every new game starts with; each quarter can use a different formation from the menu on the Plan tab. Goalkeepers: with "Switch at halftime", auto-fill gives GK 1 and GK 2 a half each; "taking turns" starts whoever has kept goal first in fewer games this season.</p>

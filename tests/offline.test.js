@@ -86,8 +86,8 @@ function assert(cond, msg) {
   }
   if (path === 'notice') {
     assert(true, 'a changed app file shows "A new version of the app is ready"');
-    await page.click('#updateToast button');
-    await page.waitForLoadState('load');
+    // wait for the NEW page's load event: the reload starts after the click returns
+    await Promise.all([page.waitForEvent('load'), page.click('#updateToast button')]);
   } else {
     assert(true, 'the update arrived before the page opened, so it opened as the new version');
   }

@@ -81,13 +81,26 @@ differ, so check it against yours; every number stays editable.
 | U11-U12 | 9v9 | 2 halves of 30 min | 3-3-2, 4-1-3, 4-2-2, 3-2-3, 2-3-3, 3-1-3-1, 3-4-1, 4-3-1 |
 | U13 and older | 11v11 | 2 halves of 35 min | 4-4-2, 4-3-3, 4-2-3-1, 4-1-4-1, 4-5-1, 3-5-2, 3-4-3, 5-3-2 |
 
-8v8 (2-3-2, 3-3-1, 3-2-2) is there too. The players-on-field sizes follow
+8v8 (2-3-2, 3-3-1, 3-2-2) and 10v10 (4-3-2, 3-4-2, 4-4-1, 3-3-3, 4-2-3,
+4-1-3-1), which a few leagues play, are there too. The players-on-field sizes follow
 U.S. Soccer's age formats; the game lengths come from one state's
 recreational rules. Set **Periods** to 2 for halves or 4 for quarters, and
 the app says halves (H1, H2) or quarters (Q1 to Q4) throughout, including on
 the print-outs.
 
 Each quarter's or half's formation is picked on the Plan tab.
+
+**Playing short.** When fewer players are available than spots, auto-fill
+puts everyone on and leaves a spot open: a forward first, then a
+midfielder, then a defender, always keeping at least one player in every
+line. The Plan tab then shows "Playing 1 short" with a **Leave open** menu
+to pick a different spot; auto-fill keeps that choice for the rest of the
+game, and the print-outs say which spot is open.
+
+**Goalkeepers** (Setup): switch at halftime with GK 1 first (the default),
+switch at halftime taking turns starting, GK 1 starts and finishes with GK 2
+in the middle, or GK 1 the whole game, with GK 2 only when GK 1 is out or
+leaves the game.
 
 To add a formation, add one line near the top of
 `custom_components/soccerlineup/frontend/app.js`, next to the others:

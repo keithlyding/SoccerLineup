@@ -39,7 +39,7 @@ function assert(cond, msg) {
     ageReset: document.getElementById('cfgAge').value }));
   assert(st.n === 11 && st.p === 2 && st.m === 35, 'U13 and older fills in 11v11, two halves of 35 minutes');
   assert(st.g === '11,2,35,4-4-2', 'the game being planned switches too, starting in 4-4-2');
-  assert(st.sizes === '11,9,8,7', 'players on field offers 11, 9, 8 and 7');
+  assert(st.sizes === '11,10,9,8,7', 'players on field offers 11, 10, 9, 8 and 7');
   assert(st.forms === '4-4-2,4-3-3,4-2-3-1,4-1-4-1,4-5-1,3-5-2,3-4-3,5-3-2', '11v11 formations: ' + st.forms);
   assert(st.ageReset === '', 'the age menu is a shortcut; the numbers below stay editable');
 
