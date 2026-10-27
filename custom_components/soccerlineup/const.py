@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 DOMAIN = "soccerlineup"
-VERSION = "1.8.0"
+VERSION = "1.8.1"
 TITLE = "Soccer Lineup"
 
 PANEL_PATH = "soccerlineup"

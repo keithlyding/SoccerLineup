@@ -51,9 +51,13 @@ function appFileKey(req){
   return null;
 }
 
+/* Files changed: each open page then asks (a "check" with again: true)
+   whether it is the one out of date. A page opened just as the update
+   finished may already be running the new files, so "updated" is only
+   ever sent in answer to a check. */
 function tellPagesAboutUpdate(){
   return self.clients.matchAll({type: "window"}).then(function(list){
-    list.forEach(function(client){ client.postMessage({type: "updated"}); });
+    list.forEach(function(client){ client.postMessage({type: "changed"}); });
   });
 }
 
@@ -163,7 +167,8 @@ self.addEventListener("message", function(ev){
   if(d.type !== "check" || !ev.source){ return; }
   var mine = {script: stampOf(d.script), style: stampOf(d.style)};
   if(!mine.script){ return; }   /* opened before this helper took charge: nothing to compare */
-  ev.waitUntil(refreshOnce().then(currentStamps).then(function(now){
+  /* after a "changed" notice the files are already up to date: just compare */
+  ev.waitUntil((d.again ? Promise.resolve() : refreshOnce()).then(currentStamps).then(function(now){
     if(now.script !== mine.script || now.style !== mine.style){
       ev.source.postMessage({type: "updated"});
     }

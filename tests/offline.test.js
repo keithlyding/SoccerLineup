@@ -57,6 +57,9 @@ function assert(cond, msg) {
   await fresh.goto(base);
   assert((await fresh.evaluate(() => document.getElementById('brandTop').textContent)) === 'Offline FC', 'opening the address fresh with no connection works too');
   await fresh.close();
+  // a second copy of the app left open in another tab, on the old version
+  const other = await context.newPage();
+  await other.goto(base);
 
   // publish a "new version" and check the page is told about it
   server = await startServer(server.port, '\nwindow.__newVersion = true;\n');
@@ -95,6 +98,18 @@ function assert(cond, msg) {
   assert(running, 'the page is running the new version (' + path + ')');
   await page.waitForTimeout(500);
   assert(await page.evaluate(() => document.getElementById('updateToast').hidden), 'no second notice once up to date');
+  // The helper announces changed files to every open page, including one
+  // that opened just as the update finished (seen in WebKit). That page must
+  // ask before showing a notice, and it is already up to date.
+  await page.evaluate(() => navigator.serviceWorker.dispatchEvent(new MessageEvent('message', { data: { type: 'changed' } })));
+  await page.waitForTimeout(800);
+  assert(await page.evaluate(() => document.getElementById('updateToast').hidden), 'a "files changed" announcement doesn\'t show the notice on a page already running them');
+  let otherNotice = false;
+  for (let t = 0; t < 50 && !otherNotice; t++) {
+    otherNotice = await other.evaluate(() => !document.getElementById('updateToast').hidden && window.__newVersion !== true);
+    if (!otherNotice) await other.waitForTimeout(100);
+  }
+  assert(otherNotice, 'a tab still on the old version gets "A new version of the app is ready"');
 
   assert(errors.length === 0, 'no errors in the page' + (errors.length ? ': ' + errors.join(' | ') : ''));
   await browser.close();

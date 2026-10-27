@@ -2703,21 +2703,24 @@ function renderPrint(){
 function setupOffline(){
   if(HA){ return; }   /* Home Assistant serves the app; there is nothing to keep offline */
   if(!("serviceWorker" in navigator) || !/^https?:$/.test(location.protocol)){ return; }
+  /* ask whether this page is the newest version (see sw.js) */
+  function askHelper(again){
+    var helper=navigator.serviceWorker.controller;
+    if(!helper){ return; }
+    var sc=document.querySelector('script[src^="app.js"]'), ln=document.querySelector('link[href^="styles.css"]');
+    helper.postMessage({type:"check", again:!!again, script:sc?sc.getAttribute("src"):"", style:ln?ln.getAttribute("href"):""});
+  }
   navigator.serviceWorker.addEventListener("message",function(ev){
     if(ev.data && ev.data.type==="updated"){
       var t=document.getElementById("updateToast");
       if(t){ t.hidden=false; }
     }
+    /* the app's files changed: this page may or may not be the old one */
+    if(ev.data && ev.data.type==="changed"){ askHelper(true); }
   });
   window.addEventListener("load",function(){
     navigator.serviceWorker.register("sw.js").catch(function(){});
-    /* ask whether this page is the newest version (see sw.js) */
-    navigator.serviceWorker.ready.then(function(){
-      var helper=navigator.serviceWorker.controller;
-      if(!helper){ return; }
-      var sc=document.querySelector('script[src^="app.js"]'), ln=document.querySelector('link[href^="styles.css"]');
-      helper.postMessage({type:"check", script:sc?sc.getAttribute("src"):"", style:ln?ln.getAttribute("href"):""});
-    }).catch(function(){});
+    navigator.serviceWorker.ready.then(function(){ askHelper(false); }).catch(function(){});
   });
 }
 
