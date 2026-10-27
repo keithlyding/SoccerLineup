@@ -20,6 +20,7 @@
   <nav role="tablist">
     <button role="tab" id="tab-plan" aria-selected="true" onclick="showTab('plan')">Plan</button>
     <button role="tab" id="tab-season" aria-selected="false" onclick="showTab('season')">Season</button>
+    <button role="tab" id="tab-stats" aria-selected="false" onclick="showTab('stats')">Stats</button>
     <button role="tab" id="tab-setup" aria-selected="false" onclick="showTab('setup')">Setup</button>
   </nav>
 </div>
@@ -154,14 +155,6 @@
     <div id="seasonTable"></div>
   </div>
   <div class="card">
-    <h2>Trends</h2>
-    <div id="trends"></div>
-  </div>
-  <div class="card">
-    <h2>Positions played</h2>
-    <div id="positionStats"></div>
-  </div>
-  <div class="card">
     <h2>Games</h2>
     <div id="gameList"></div>
   </div>
@@ -180,6 +173,17 @@
       <div id="haHistoryList"></div>
     </div>
     <p class="hint">The backup file contains your team setup, roster, player settings, attendance, current lineup, saved games, and goals. You can restore it in SoccerLineup on another browser or device, or after this browser's stored data has been cleared. Restoring replaces the SoccerLineup data currently stored in that browser.</p>
+  </div>
+</section>
+
+<section id="stats" hidden>
+  <div class="card">
+    <h2>Trends</h2>
+    <div id="trends"></div>
+  </div>
+  <div class="card">
+    <h2>Positions played</h2>
+    <div id="positionStats"></div>
   </div>
 </section>
 

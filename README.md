@@ -78,7 +78,7 @@ The opponent's total then adds itself up; **Use a total instead** goes back
 to typing a single number. The print-outs have room for both teams' goals
 each quarter.
 
-**Season, Trends** shows, for the games you pick (filter by opponent, and
+**Stats, Trends** (the Stats tab at the top) shows, for the games you pick (filter by opponent, and
 tick or untick games):
 
 - the record and goals for and against per game;

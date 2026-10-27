@@ -51,7 +51,7 @@ function assert(cond, msg) {
   await server.stop();
   await page.reload();
   const offline = await page.evaluate(() => ({ team: document.getElementById('brandTop').textContent, tabs: document.querySelectorAll('nav button').length, css: getComputedStyle(document.body).backgroundColor }));
-  assert(offline.team === 'Offline FC' && offline.tabs === 3, 'with no connection the app still opens with its data');
+  assert(offline.team === 'Offline FC' && offline.tabs === 4, 'with no connection the app still opens with its data');
   assert(offline.css === 'rgb(251, 250, 246)', 'with no connection the styles still load');
   const fresh = await context.newPage();
   await fresh.goto(base);

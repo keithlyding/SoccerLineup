@@ -193,7 +193,7 @@ function assert(cond, msg) {
       });
       S.games.push(g);
     });
-    save(); showTab('season');
+    save(); showTab('stats');
   });
   st = await page.evaluate(() => {
     const row = Array.from(document.querySelectorAll('#positionStats tr')).find(tr => tr.textContent.startsWith('Kim'));
@@ -201,8 +201,8 @@ function assert(cond, msg) {
   });
   assert(st.rows === 12, 'Positions played lists every player');
   assert(/secondary is the same as primary/.test(st.kim) && /plays forward often/.test(st.kim), 'it flags a player who often plays a line her settings don\'t cover: ' + st.kim.slice(0, 120));
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
-  assert(!overflow, 'the Season tab has no sideways scrolling at this width');
+  const overflow = await page.evaluate(() => ['season', 'stats'].filter(t => { showTab(t); return document.documentElement.scrollWidth > window.innerWidth; }));
+  assert(!overflow.length, 'the Season and Stats tabs have no sideways scrolling at this width' + (overflow.length ? ': ' + overflow.join() : ''));
 
   assert(errors.length === 0, 'no errors in the page' + (errors.length ? ': ' + errors.join(' | ') : ''));
   await browser.close();

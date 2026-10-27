@@ -1,4 +1,4 @@
-// Opponent goals by period, and the Season tab's Trends with its filters.
+// Opponent goals by period, and the Stats tab's Trends with its filters.
 // Run with: npm test            (desktop, Chromium)
 //           npm run test:iphone (iPhone screen and touch, WebKit)
 const path = require('path');
@@ -72,7 +72,14 @@ function assert(cond, msg) {
   await page.evaluate(() => stopEditing());
 
   // ---------- trends ----------
-  await page.evaluate(() => showTab('season'));
+  await press('#tab-stats');
+  st = await page.evaluate(() => ({ stats: !document.getElementById('stats').hidden, season: document.getElementById('season').hidden,
+    inStats: !!document.querySelector('#stats #trends') && !!document.querySelector('#stats #positionStats'),
+    inSeason: !!document.querySelector('#season #trends, #season #positionStats'),
+    tabs: Array.from(document.querySelectorAll('.topbar nav button')).map(b => b.textContent).join(' '),
+    fit: Array.from(document.querySelectorAll('.topbar nav button')).every(b => b.scrollWidth <= b.clientWidth) }));
+  assert(st.stats && st.season && st.inStats && !st.inSeason, 'Trends and Positions played are on their own Stats tab, not the Season tab');
+  assert(st.tabs === 'Plan Season Stats Setup' && st.fit, 'the top bar has Plan, Season, Stats, Setup and the names fit: ' + st.tabs);
   const read = () => page.evaluate(() => ({
     sum: (document.querySelector('#trends .trendsum') || {}).textContent || '',
     bars: Array.from(document.querySelectorAll('#trends .bar')).map(b => b.classList[1] + ':' + b.querySelector('text').textContent),
@@ -148,7 +155,7 @@ function assert(cond, msg) {
   await press('#trends .qgame:first-child button');
   st = await page.evaluate(() => ({ edit: ui.editId === S.games[0].id, q: ui.q }));
   assert(st.edit && st.q === 2, '"Open" opens that game on the Plan tab at Q3');
-  await page.evaluate(() => { stopEditing(); showTab('season'); });
+  await page.evaluate(() => { stopEditing(); showTab('stats'); });
 
   // filter by opponent
   await page.selectOption('#trends select', 'Wolfe');
@@ -171,8 +178,8 @@ function assert(cond, msg) {
   st = await page.evaluate(() => ({ q: S.games[0].oppGoalsQ, total: S.games[0].oppGoals, ro: document.getElementById('fOppGoals').readOnly }));
   assert(st.q === undefined && st.total === 2 && !st.ro, '"Use a total instead" keeps the total and makes it editable again');
 
-  const overflow = await page.evaluate(() => { showTab('season'); return document.documentElement.scrollWidth > window.innerWidth; });
-  assert(!overflow, 'no sideways scrolling on the Season tab');
+  const overflow = await page.evaluate(() => { showTab('stats'); return document.documentElement.scrollWidth > window.innerWidth; });
+  assert(!overflow, 'no sideways scrolling on the Stats tab');
   assert(errors.length === 0, 'no errors in the page' + (errors.length ? ': ' + errors.join(' | ') : ''));
   await browser.close();
   await server.stop();

@@ -721,7 +721,7 @@ function seasonTotals(){
 
 function showTab(t){
   ui.tab=t;
-  ["plan","season","setup"].forEach(function(k){
+  ["plan","season","stats","setup"].forEach(function(k){
     document.getElementById(k).hidden=(k!==t);
     document.getElementById("tab-"+k).setAttribute("aria-selected", k===t?"true":"false");
   });
@@ -1893,7 +1893,7 @@ function renderPlan(){
     '<b class="oppq" id="oppQValue">'+(byPeriod?oppGoalsIn(g,ui.q):"\u2014")+'</b> '+
     '<button class="btn sm" onclick="bumpOppGoal('+ui.q+',1)" aria-label="One more opponent goal">+</button>'+
     (byPeriod?' <button class="btn sm quiet" onclick="clearOppByPeriod()">Use a total instead</button>'
-             :' <span class="hint" style="margin:0">Record them by '+PW(g).low+' to see when goals are allowed (Season, Trends).</span>');
+             :' <span class="hint" style="margin:0">Record them by '+PW(g).low+' to see when goals are allowed (Stats, Trends).</span>');
   document.getElementById("doneEditBtn").hidden=!ui.editId;
   document.getElementById("archiveBtn").textContent=
     ui.editId ? "Save changes" : "Save game to season";
