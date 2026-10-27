@@ -52,7 +52,8 @@ function handle(dev, msg) {
     case 'soccerlineup/subscribe': {
       dev.subs.add(msg.sub_id);
       const ev = { ...snapshot(), client_id: null };
-      setTimeout(() => dev.page.evaluate(([i, e]) => window.deliver(i, e), [msg.sub_id, ev]).catch(() => {}), 0);
+      // eventDelay: the first update after (re)connecting arrives late, like on a slow network
+      setTimeout(() => dev.page.evaluate(([i, e]) => window.deliver(i, e), [msg.sub_id, ev]).catch(() => {}), dev.eventDelay || 0);
       return { result: null };
     }
     case 'soccerlineup/get': return { result: snapshot() };
@@ -67,7 +68,9 @@ function handle(dev, msg) {
     case 'soccerlineup/history':
       return { result: { versions: HAS.history.slice().reverse().map(({ data, ...rest }) => rest) } };
     case 'soccerlineup/keep_version':
-      record(null, msg.data, dev.who, 'not kept'); return { result: null };
+      record(null, msg.data, dev.who, 'not kept');
+      // keepDelay: a slow reply, so other messages arrive while the app waits for it
+      return dev.keepDelay ? new Promise(r => setTimeout(() => r({ result: null }), dev.keepDelay)) : { result: null };
     case 'soccerlineup/restore': {
       const v = HAS.history.find(x => x.id === msg.version);
       if (!v) return { error: { code: 'not_found', message: 'That version is no longer kept.' } };
@@ -91,7 +94,7 @@ function handle(dev, msg) {
     const dev = { who, page, subs: new Set(), offline: false };
     HAS.devices.set(who, dev);
     page.on('pageerror', e => errors.push(who + ': ' + e.message));
-    await page.exposeFunction('fakeHA', raw => JSON.stringify(handle(dev, JSON.parse(raw))));
+    await page.exposeFunction('fakeHA', async raw => JSON.stringify(await handle(dev, JSON.parse(raw))));
     await page.goto(server.base + 'tests/fake_ha.html?who=' + who + (narrow ? '&narrow=1' : ''));
     let frame = null;
     await until(async () => {
@@ -179,12 +182,17 @@ function handle(dev, msg) {
   await phone.frame.evaluate(() => setGameField('opp', 'Phone version'));
   await laptop.frame.evaluate(() => setGameField('opp', 'Laptop version'));
   await until(async () => HAS.data.current.opp === 'Laptop version', 'the laptop\'s change to be saved');
+  const phoneDev = HAS.devices.get('Phone');
+  phoneDev.eventDelay = 250;   // the reconnect update arrives after the phone has already saved
   await phone.page.evaluate(() => goOnline());
-  await until(async () => phoneDialogs.length === 1, 'the phone to ask which version to keep');
+  await until(async () => phoneDialogs.length >= 1, 'the phone to ask which version to keep');
   assert(/also changed on another device by Laptop/.test(phoneDialogs[0]), 'the phone asks which version to keep, naming the other device\'s user');
   await until(async () => HAS.data.current.opp === 'Phone version', 'the phone\'s version to win');
   await until(async () => (await opp(laptop)) === 'Phone version', 'the laptop to switch to the phone\'s version');
   assert(HAS.history.some(v => v.reason === 'kept this device' && v.data.current.opp === 'Laptop version'), 'OK keeps this device\'s version; the other one stays in history');
+  await sleep(700);
+  assert(phoneDialogs.length === 1, 'the phone asked only once');
+  assert((await opp(phone)) === 'Phone version', 'a late, out-of-date update doesn\'t put the old version back on the phone');
 
   // ---------- both changed: use the other version ----------
   phone.page.removeAllListeners('dialog');
@@ -193,11 +201,15 @@ function handle(dev, msg) {
   await phone.frame.evaluate(() => setGameField('opp', 'Phone again'));
   await laptop.frame.evaluate(() => setGameField('opp', 'Laptop again'));
   await until(async () => HAS.data.current.opp === 'Laptop again', 'the laptop\'s second change to be saved');
+  phoneDev.keepDelay = 600;    // filing this device's version is slow, and the reconnect update lands meanwhile
   await phone.page.evaluate(() => goOnline());
-  await until(async () => phoneDialogs.length === 2, 'the phone to ask again');
+  await until(async () => phoneDialogs.length >= 2, 'the phone to ask again');
   await until(async () => (await opp(phone)) === 'Laptop again', 'the phone to switch to the laptop\'s version');
   assert(HAS.data.current.opp === 'Laptop again', 'Cancel uses the other version');
   assert(HAS.history.some(v => v.reason === 'not kept' && v.data.current.opp === 'Phone again'), 'the phone\'s version that wasn\'t kept stays in history');
+  await sleep(900);
+  assert(phoneDialogs.length === 2, 'the phone asked only once that time too');
+  phoneDev.eventDelay = 0; phoneDev.keepDelay = 0;
 
   // ---------- restore an earlier version from the Season tab ----------
   await laptop.frame.evaluate(() => showTab('season'));

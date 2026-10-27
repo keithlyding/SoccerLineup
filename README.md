@@ -70,6 +70,28 @@ all: nothing to install, no account, and the season stays in that browser.
 
 Moving to Home Assistant later is one backup and one restore.
 
+## Trends
+
+**Opponent goals by quarter.** On the Plan tab, the Goals card has the
+opponent's goals for the quarter (or half) you're viewing, with + and -.
+The opponent's total then adds itself up; **Use a total instead** goes back
+to typing a single number. The print-outs have room for both teams' goals
+each quarter.
+
+**Season, Trends** shows, for the games you pick (filter by opponent, and
+tick or untick games):
+
+- the record and goals for and against per game;
+- a chart of goals scored and allowed per game in each quarter;
+- by formation: quarters played, goals scored and allowed, per quarter;
+- by goalkeeper: goals allowed per quarter in goal;
+- while each player is on the field: team goals scored and allowed.
+
+Goals allowed by quarter need the opponent's goals recorded by quarter;
+games with only a total are left out of those figures, and the page says how
+many. A handful of games can swing these numbers a lot, so read them as
+hints.
+
 ## Age groups and formations
 
 Setup has an **Age group** shortcut that fills in the match format. Leagues

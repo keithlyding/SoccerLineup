@@ -3,8 +3,8 @@
   "private": true,
   "description": "Plan fair soccer lineups quarter by quarter.",
   "scripts": {
-    "test": "node tests/app.test.js && node tests/offline.test.js && node tests/season.test.js && node tests/backup.test.js && node tests/ages.test.js && node tests/short.test.js && node tests/ha.test.js",
-    "test:iphone": "node tests/app.test.js --iphone && node tests/offline.test.js --iphone && node tests/season.test.js --iphone && node tests/backup.test.js --iphone && node tests/ages.test.js --iphone && node tests/short.test.js --iphone && node tests/ha.test.js --iphone",
+    "test": "node tests/app.test.js && node tests/offline.test.js && node tests/season.test.js && node tests/backup.test.js && node tests/ages.test.js && node tests/short.test.js && node tests/trends.test.js && node tests/ha.test.js",
+    "test:iphone": "node tests/app.test.js --iphone && node tests/offline.test.js --iphone && node tests/season.test.js --iphone && node tests/backup.test.js --iphone && node tests/ages.test.js --iphone && node tests/short.test.js --iphone && node tests/trends.test.js --iphone && node tests/ha.test.js --iphone",
     "test:real-ha": "bash tests/real_ha/run.sh"
   },
   "devDependencies": {

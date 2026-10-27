@@ -389,6 +389,12 @@ function normalizeGame(g, saved){
   if(!g.left){ g.left={}; }
   if(!g.leaveOpen){ g.leaveOpen={}; }
   if(g.notes===undefined || g.notes===null){ g.notes=""; }
+  /* opponent goals by period: an array once recorded that way, else absent */
+  if(Array.isArray(g.oppGoalsQ)){
+    while(g.oppGoalsQ.length<g.nq){ g.oppGoalsQ.push(0); }
+    g.oppGoalsQ.length=g.nq;
+    g.oppGoals=g.oppGoalsQ.reduce(function(s,x){ return s+(Number(x)||0); },0);
+  }else{ delete g.oppGoalsQ; }
   /* A saved game dated after today with no score yet was planned ahead and
      hasn't been played: it doesn't count toward the season until it is. */
   if(saved && g.planned===undefined){
@@ -624,6 +630,27 @@ function seasonRecord(){
     else { r.unknown+=1; }
   }
   return r;
+}
+/* The opponent's goals in period q of game g, or null when only a total was kept. */
+function oppGoalsIn(g, q){
+  return Array.isArray(g.oppGoalsQ) ? (Number(g.oppGoalsQ[q])||0) : null;
+}
+function bumpOppGoal(q, delta){
+  var g=G(), i;
+  if(!Array.isArray(g.oppGoalsQ)){
+    g.oppGoalsQ=[];
+    for(i=0;i<g.nq;i++){ g.oppGoalsQ.push(0); }
+  }
+  g.oppGoalsQ[q]=Math.max(0,(Number(g.oppGoalsQ[q])||0)+delta);
+  g.oppGoals=g.oppGoalsQ.reduce(function(s,x){ return s+(Number(x)||0); },0);
+  if(g.planned){ g.planned=false; }   /* a score means it was played */
+  save(); render();
+}
+/* back to a single total for the opponent */
+function clearOppByPeriod(){
+  var g=G();
+  delete g.oppGoalsQ;
+  save(); render();
 }
 function setOpponentGoals(value){
   var g=G();
@@ -1857,6 +1884,16 @@ function renderPlan(){
   if(notesEl && document.activeElement!==notesEl){ notesEl.value=g.notes||""; }
   renderOpponentNotes(g);
   document.getElementById("fOppGoals").value=(g.oppGoals===null || g.oppGoals===undefined)?"":g.oppGoals;
+  var byPeriod=Array.isArray(g.oppGoalsQ);
+  document.getElementById("fOppGoals").readOnly=byPeriod;
+  document.getElementById("fOppGoals").title=byPeriod?"The total of the "+PW(g).lows+" below":"";
+  document.getElementById("oppQRow").innerHTML=
+    '<span><b>'+esc(g.opp||"Opponent")+'</b> goals in '+PW(g).s+(ui.q+1)+':</span> '+
+    '<button class="btn sm quiet" onclick="bumpOppGoal('+ui.q+',-1)" aria-label="One fewer opponent goal">\u2212</button> '+
+    '<b class="oppq" id="oppQValue">'+(byPeriod?oppGoalsIn(g,ui.q):"\u2014")+'</b> '+
+    '<button class="btn sm" onclick="bumpOppGoal('+ui.q+',1)" aria-label="One more opponent goal">+</button>'+
+    (byPeriod?' <button class="btn sm quiet" onclick="clearOppByPeriod()">Use a total instead</button>'
+             :' <span class="hint" style="margin:0">Record them by '+PW(g).low+' to see when goals are allowed (Season, Trends).</span>');
   document.getElementById("doneEditBtn").hidden=!ui.editId;
   document.getElementById("archiveBtn").textContent=
     ui.editId ? "Save changes" : "Save game to season";
@@ -2142,6 +2179,202 @@ function renderPositionStats(){
   box.innerHTML=h;
 }
 
+/* ---------- trends ----------
+   Offense and defense across played games, filtered by opponent and game:
+   goals for and against by period, by formation, by goalkeeper, and while
+   each player is on the field. Goals against by period need the opponent's
+   goals recorded by period; games with only a total are left out of those
+   figures (and the page says how many). */
+function trendGames(){
+  var tf=ui.trend||{opp:"", off:{}}, opp=(tf.opp||"").toLowerCase();
+  return playedGames().filter(function(g){
+    if(opp && (g.opp||"").trim().toLowerCase()!==opp){ return false; }
+    return !tf.off[g.id];
+  });
+}
+function setTrendOpp(v){ ui.trend=ui.trend||{opp:"", off:{}}; ui.trend.opp=v; renderTrends(); }
+function setTrendGame(id, on){
+  ui.trend=ui.trend||{opp:"", off:{}};
+  if(on){ delete ui.trend.off[id]; } else { ui.trend.off[id]=true; }
+  renderTrends();
+}
+function setTrendAll(on){
+  ui.trend=ui.trend||{opp:"", off:{}};
+  ui.trend.off={};
+  if(!on){ playedGames().forEach(function(g){ ui.trend.off[g.id]=true; }); }
+  renderTrends();
+}
+function teamGoalsIn(g, q){
+  var t=0, ids=Object.keys(g.goals||{}), i;
+  for(i=0;i<ids.length;i++){ t+=goalsOf(g,ids[i],q); }
+  return t;
+}
+function computeTrends(games){
+  var counts={}, nq=0, best=0, i, g, q, f, row, j, id, k;
+  /* the period chart uses the most common format among these games */
+  games.forEach(function(x){ counts[x.nq]=(counts[x.nq]||0)+1; });
+  for(k in counts){ if(Object.prototype.hasOwnProperty.call(counts,k) && counts[k]>best){ best=counts[k]; nq=Number(k); } }
+  var t={ games:games.length, nq:nq, gf:0, ga:0, gaGames:0, rec:{w:0,l:0,t:0},
+          periods:[], periodGames:0, periodGaGames:0, forms:{}, keepers:{}, players:{} };
+  for(q=0;q<nq;q++){ t.periods.push({gf:0, ga:0}); }
+  for(i=0;i<games.length;i++){
+    g=games[i];
+    var r=gameResult(g), hasQ=Array.isArray(g.oppGoalsQ);
+    if(r==="W"){ t.rec.w++; } else if(r==="L"){ t.rec.l++; } else if(r==="T"){ t.rec.t++; }
+    t.gf+=teamGoals(g);
+    if(g.oppGoals!==null && g.oppGoals!==undefined){ t.ga+=Number(g.oppGoals)||0; t.gaGames++; }
+    if(g.nq===nq){
+      t.periodGames++;
+      if(hasQ){ t.periodGaGames++; }
+    }
+    for(q=0;q<g.nq;q++){
+      var gfq=teamGoalsIn(g,q), gaq=oppGoalsIn(g,q);
+      if(g.nq===nq){
+        t.periods[q].gf+=gfq;
+        if(gaq!==null){ t.periods[q].ga+=gaq; }
+      }
+      f=qForm(g,q); row=g.plan[q]||[];
+      var fn=qFormName(g,q);
+      var fs=t.forms[fn]=t.forms[fn]||{periods:0, gf:0, ga:0, gaPeriods:0};
+      fs.periods++; fs.gf+=gfq;
+      if(gaq!==null){ fs.ga+=gaq; fs.gaPeriods++; }
+      for(j=0;j<row.length && j<f.pos.length;j++){
+        id=row[j];
+        if(!id){ continue; }
+        if(f.pos[j].z==="G"){
+          var ks=t.keepers[id]=t.keepers[id]||{name:nameOf(id,g), periods:0, ga:0, gaPeriods:0};
+          ks.periods++;
+          if(gaq!==null){ ks.ga+=gaq; ks.gaPeriods++; }
+        }
+        var ps=t.players[id]=t.players[id]||{name:nameOf(id,g), periods:0, gf:0, ga:0, gaPeriods:0};
+        ps.periods++; ps.gf+=gfq;
+        if(gaq!==null){ ps.ga+=gaq; ps.gaPeriods++; }
+      }
+    }
+  }
+  return t;
+}
+function fmt1(x){ return (Math.round(x*10)/10).toFixed(1); }
+/* Goals for and against per game in each period: grouped bars, one axis. */
+function trendChart(t){
+  var W=560, H=220, padL=34, padR=10, padT=14, padB=34, n=t.nq, pw=periodWords(n), i, s="";
+  if(!n || !t.periodGames){ return ""; }
+  var gfAvg=[], gaAvg=[], max=0;
+  for(i=0;i<n;i++){
+    gfAvg.push(t.periods[i].gf/t.periodGames);
+    gaAvg.push(t.periodGaGames ? t.periods[i].ga/t.periodGaGames : null);
+    max=Math.max(max, gfAvg[i], gaAvg[i]||0);
+  }
+  var top=Math.max(1, Math.ceil(max*2)/2), plotH=H-padT-padB, plotW=W-padL-padR;
+  var y=function(v){ return padT+plotH-(v/top)*plotH; };
+  var group=plotW/n, bw=Math.min(34,(group-18)/2), gap=2;
+  s+='<svg class="trendchart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Goals scored and allowed per game in each '+pw.low+'">';
+  /* recessive grid: halves of a goal */
+  for(var v=0; v<=top+0.0001; v+=(top>3?1:0.5)){
+    s+='<line class="grid" x1="'+padL+'" x2="'+(W-padR)+'" y1="'+y(v)+'" y2="'+y(v)+'"/>'+
+       '<text class="axis" x="'+(padL-6)+'" y="'+(y(v)+4)+'" text-anchor="end">'+(v%1?v.toFixed(1):v)+'</text>';
+  }
+  for(i=0;i<n;i++){
+    var cx=padL+group*i+group/2, label=pw.s+(i+1);
+    var bars=[{v:gfAvg[i], cls:"for", x:cx-bw-gap/2, what:"Scored"}, {v:gaAvg[i], cls:"against", x:cx+gap/2, what:"Allowed"}];
+    bars.forEach(function(b){
+      if(b.v===null){ return; }
+      var h=Math.max(0, padT+plotH-y(b.v)), r=Math.min(4,h);
+      /* rounded data end, square at the baseline */
+      var x0=b.x, x1=b.x+bw, yb=padT+plotH, yt=yb-h;
+      var d=h<=0 ? "" : 'M'+x0+','+yb+' L'+x0+','+(yt+r)+' Q'+x0+','+yt+' '+(x0+r)+','+yt+' L'+(x1-r)+','+yt+' Q'+x1+','+yt+' '+x1+','+(yt+r)+' L'+x1+','+yb+' Z';
+      s+='<g class="bar '+b.cls+'" tabindex="0"><title>'+label+': '+b.what+' '+fmt1(b.v)+' per game</title>'+
+         '<rect class="hit" x="'+(b.x-2)+'" y="'+padT+'" width="'+(bw+4)+'" height="'+plotH+'"/>'+
+         (d?'<path d="'+d+'"/>':'')+
+         '<text class="val" x="'+(b.x+bw/2)+'" y="'+(yt-4)+'" text-anchor="middle">'+fmt1(b.v)+'</text></g>';
+    });
+    s+='<text class="axis" x="'+cx+'" y="'+(H-padB+16)+'" text-anchor="middle">'+label+'</text>';
+  }
+  s+='<line class="baseline" x1="'+padL+'" x2="'+(W-padR)+'" y1="'+(padT+plotH)+'" y2="'+(padT+plotH)+'"/></svg>';
+  return '<div class="legend"><span class="key for"></span>Scored <span class="key against"></span>Allowed'+
+         '<span class="hint" style="margin:0 0 0 8px">per game, in each '+pw.low+'</span></div>'+s;
+}
+function renderTrends(){
+  var box=document.getElementById("trends");
+  if(!box){ return; }
+  ui.trend=ui.trend||{opp:"", off:{}};
+  var all=playedGames(), tf=ui.trend, h="", i, g, opps={}, oppList=[];
+  if(!all.length){ box.innerHTML='<p class="hint">Save played games to see trends.</p>'; return; }
+  all.forEach(function(x){ var o=(x.opp||"").trim(); if(o && !opps[o.toLowerCase()]){ opps[o.toLowerCase()]=o; oppList.push(o); } });
+  oppList.sort(function(x,y){ return x.localeCompare(y); });
+  /* filters, in one row above the figures */
+  h+='<div class="row trendfilters"><label class="field">Opponent<select onchange="setTrendOpp(this.value)">'+
+     '<option value="">All opponents</option>';
+  for(i=0;i<oppList.length;i++){
+    h+='<option value="'+esc(oppList[i])+'"'+(tf.opp.toLowerCase()===oppList[i].toLowerCase()?' selected':'')+'>'+esc(oppList[i])+'</option>';
+  }
+  h+='</select></label><span class="hint" style="margin:0">Games:</span>'+
+     '<button class="btn sm quiet" onclick="setTrendAll(true)">All</button><button class="btn sm quiet" onclick="setTrendAll(false)">None</button></div>';
+  h+='<div class="chips trendgames">';
+  var list=all.filter(function(x){ return !tf.opp || (x.opp||"").trim().toLowerCase()===tf.opp.toLowerCase(); })
+              .sort(function(x,y){ return (x.date||"").localeCompare(y.date||""); });
+  for(i=0;i<list.length;i++){
+    g=list[i];
+    h+='<label class="gamepick'+(tf.off[g.id]?' off':'')+'"><input type="checkbox"'+(tf.off[g.id]?'':' checked')+
+       ' onchange="setTrendGame('+g.id+',this.checked)"> '+esc(g.date||"")+' '+esc(g.opp||"")+'</label>';
+  }
+  h+='</div>';
+  var games=trendGames(), t=computeTrends(games), sw=seasonWords();
+  if(!games.length){ box.innerHTML=h+'<p class="hint">No games selected.</p>'; return; }
+  var pw=periodWords(t.nq);
+  h+='<p class="trendsum"><b>'+t.games+' game'+(t.games===1?'':'s')+'</b>: '+t.rec.w+'-'+t.rec.l+'-'+t.rec.t+' (W-L-T). '+
+     'Scored '+t.gf+' ('+fmt1(t.gf/t.games)+' a game)'+
+     (t.gaGames?', allowed '+t.ga+' ('+fmt1(t.ga/t.gaGames)+' a game)':', allowed: no opponent scores entered')+'.</p>';
+  h+=trendChart(t);
+  if(t.periodGames && t.periodGaGames<t.periodGames){
+    h+='<p class="hint">Goals allowed by '+pw.low+' come from '+t.periodGaGames+' of '+t.periodGames+
+       ' games; the others only have the opponent\u2019s total. Record opponent goals by '+pw.low+' on the Plan tab.</p>';
+  }
+  if(t.periodGames<t.games){
+    h+='<p class="hint">'+(t.games-t.periodGames)+' selected game'+(t.games-t.periodGames===1?' is':'s are')+' in a different format and '+(t.games-t.periodGames===1?'is':'are')+' left out of the chart.</p>';
+  }
+  function rate(n,d){ return d?fmt1(n/d):"\u2014"; }
+  /* by formation */
+  var fk=Object.keys(t.forms).sort(function(x,y){ return t.forms[y].periods-t.forms[x].periods || x.localeCompare(y); });
+  h+='<h3 style="margin-top:14px">By formation</h3><div class="scrollx"><table><thead><tr><th>Formation</th><th class="num">'+sw.many+'</th>'+
+     '<th class="num">Scored</th><th class="num">Allowed</th><th class="num">Scored per '+sw.low+'</th><th class="num">Allowed per '+sw.low+'</th></tr></thead><tbody>';
+  fk.forEach(function(k){
+    var f=t.forms[k];
+    h+='<tr><td>'+esc(k)+'</td><td class="num">'+f.periods+'</td><td class="num">'+f.gf+'</td><td class="num">'+(f.gaPeriods?f.ga:"\u2014")+'</td>'+
+       '<td class="num">'+rate(f.gf,f.periods)+'</td><td class="num">'+rate(f.ga,f.gaPeriods)+'</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  /* by goalkeeper */
+  var kk=Object.keys(t.keepers).sort(function(x,y){ return t.keepers[y].periods-t.keepers[x].periods; });
+  if(kk.length){
+    h+='<h3 style="margin-top:14px">By goalkeeper</h3><div class="scrollx"><table><thead><tr><th>Keeper</th><th class="num">'+sw.many+' in goal</th>'+
+       '<th class="num">Allowed</th><th class="num">Allowed per '+sw.low+'</th></tr></thead><tbody>';
+    kk.forEach(function(k){
+      var s=t.keepers[k];
+      h+='<tr><td>'+esc(s.name)+'</td><td class="num">'+s.periods+'</td><td class="num">'+(s.gaPeriods?s.ga:"\u2014")+'</td><td class="num">'+rate(s.ga,s.gaPeriods)+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  /* on the field */
+  var pk=Object.keys(t.players).map(function(k){ return t.players[k]; });
+  pk.forEach(function(p){
+    p.net=(p.gaPeriods ? (p.gf/p.periods - p.ga/p.gaPeriods) : null);
+  });
+  pk.sort(function(x,y){
+    var a=x.net===null?-1e9:x.net, b=y.net===null?-1e9:y.net;
+    return b-a || (y.gf/y.periods)-(x.gf/x.periods) || x.name.localeCompare(y.name);
+  });
+  h+='<h3 style="margin-top:14px">While each player is on the field</h3><div class="scrollx"><table><thead><tr><th>Player</th><th class="num">'+sw.many+'</th>'+
+     '<th class="num">Team scored</th><th class="num">Team allowed</th><th class="num">Scored per '+sw.low+'</th><th class="num">Allowed per '+sw.low+'</th></tr></thead><tbody>';
+  pk.forEach(function(p){
+    h+='<tr><td>'+esc(p.name)+'</td><td class="num">'+p.periods+'</td><td class="num">'+p.gf+'</td><td class="num">'+(p.gaPeriods?p.ga:"\u2014")+'</td>'+
+       '<td class="num">'+rate(p.gf,p.periods)+'</td><td class="num">'+rate(p.ga,p.gaPeriods)+'</td></tr>';
+  });
+  h+='</tbody></table></div><p class="hint">Team goals while a player was on the field, sorted by scored minus allowed per '+sw.low+'. '+
+     'A few games can swing these numbers a lot, so treat them as hints to look into, not verdicts.</p>';
+  box.innerHTML=h;
+}
+
 function renderSeason(){
   var t=seasonTotals(), record=seasonRecord(), i, h="";
   var plannedCount=S.games.length-playedGames().length;
@@ -2197,6 +2430,7 @@ function renderSeason(){
   }
   document.getElementById("gameList").innerHTML=h;
   renderPositionStats();
+  renderTrends();
 }
 
 function renderSetup(){
@@ -2300,7 +2534,7 @@ function renderPrint(){
        '<div class="psit"><b>Sitting this '+PW(g).low+':</b> '+
        esc(presentInQ(g,q).filter(function(p){return g.plan[q].indexOf(p.id)<0;}).map(function(p){return p.name;}).join(", ")||"\u2014")+
        '</div>'+(shortInfo(g,q).by>0?'<div class="psit"><b>Playing '+shortInfo(g,q).by+' short:</b> '+esc(shortInfo(g,q).open.join(", ")||"\u2014")+' open</div>':'')+
-       '<div class="psit"><b>'+PW(g).s+(q+1)+' goals:</b> ____</div></div>'+
+       '<div class="psit"><b>'+PW(g).s+(q+1)+' goals:</b> us ____ &nbsp; them ____</div></div>'+
        '<div class="pside">'+sitDock()+notesBlock()+'</div></div></section>';
   }
 
@@ -2361,7 +2595,13 @@ function haPush(force){
   sync.timer=0;
   var conn=haConn();
   if(!conn){ haSetStatus("offline"); return; }
-  if(sync.inFlight){ sync.again=true; return; }
+  if(sync.inFlight){
+    sync.again=true;
+    if(force){ sync.forceNext=true; }   /* don't lose "keep this device's version" behind another save */
+    return;
+  }
+  force=force || sync.forceNext;
+  sync.forceNext=false;
   var json=JSON.stringify(S);
   if(json===sync.lastJson && !force){
     sync.pending=false; haWriteCache(); haSetStatus("saved"); return;
@@ -2374,6 +2614,7 @@ function haPush(force){
   haSetStatus("saving");
   conn.sendMessagePromise(msg).then(function(res){
     sync.inFlight=false;
+    sync.forceNext=false;   /* this device's version is saved */
     sync.rev=res.rev; sync.lastJson=json; sync.savedAt=res.saved_at; sync.savedBy=null;
     sync.pending=(JSON.stringify(S)!==json);
     haWriteCache();
@@ -2386,7 +2627,12 @@ function haPush(force){
     }
   }, function(err){
     sync.inFlight=false;
-    if(err && err.code==="conflict"){ haConflict(); return; }
+    if(err && err.code==="conflict"){
+      if(sync.forceNext){ haPush(); return; }   /* already decided: keep this device's version */
+      if(!sync.pending){ return; }             /* already decided: the other version is in use */
+      haConflict();
+      return;
+    }
     /* sent again when the connection comes back, or with the next change */
     haSetStatus("offline");
   });
@@ -2405,6 +2651,7 @@ function haOnServer(ev){
     sync.rev=0; sync.lastJson=null; sync.pending=true; haWriteCache(); haSchedulePush(0);
     return;
   }
+  if(ev.rev<sync.rev){ return; }   /* older than what this device already has: a late arrival */
   if(ev.rev===sync.rev){
     if(sync.pending){ haSchedulePush(0); } else { haSetStatus("saved", ev); }
     return;
@@ -2439,15 +2686,16 @@ function haConflict(ev){
     var keepMine=confirm("This season was also changed on another device"+who+when+" while this one was offline.\n\n"+
       "OK: keep this device's version.\nCancel: use the other version.\n\n"+
       "Either way, the version you don't keep stays under Season, Earlier versions.");
-    sync.resolving=false;
     if(keepMine){
+      sync.resolving=false;
       sync.rev=server.rev;
       haPush(true);
     }else{
-      /* this device's version goes into history, the other one is used */
+      /* this device's version goes into history, the other one is used; still
+         deciding until then, so an update arriving meanwhile doesn't ask again */
       conn.sendMessagePromise({type:"soccerlineup/keep_version", data:JSON.parse(JSON.stringify(S))})
         .then(function(){}, function(){})
-        .then(function(){ haApplyRemote(server); });
+        .then(function(){ sync.resolving=false; haApplyRemote(server); });
     }
   }, function(){ sync.resolving=false; haSetStatus("offline"); });
 }

@@ -188,6 +188,30 @@ tr.over td{background:#FBEFEF}
 .tag.ok{background:#DCEAE1;color:var(--ok)}
 .tag.planned{background:#E4E8F2;color:#34466B}
 .scrollx{overflow-x:auto;max-width:100%}
+.oppq{display:inline-block;min-width:22px;text-align:center;font-size:16px}
+input[readonly]{background:#F3F4F1;color:var(--ink-soft)}
+/* trends: the reference palette's first two categorical slots (validated pair) */
+.trendfilters{margin-bottom:6px}
+.trendgames{margin-bottom:8px}
+.gamepick{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:4px 9px;border:1px solid var(--line);border-radius:14px;background:#fff;cursor:pointer}
+.gamepick.off{opacity:.55}
+.gamepick input{width:16px;height:16px}
+.trendsum{font-size:14px;margin:6px 0}
+.legend{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--ink-soft);margin:6px 0 2px}
+.legend .key{display:inline-block;width:12px;height:12px;border-radius:3px;margin-left:6px}
+.legend .key:first-child{margin-left:0}
+.legend .key.for{background:#2a78d6}
+.legend .key.against{background:#eb6834}
+.trendchart{display:block;width:100%;max-width:560px;height:auto;background:#fcfcfb;border-radius:8px}
+.trendchart .grid{stroke:#e6e6e1;stroke-width:1}
+.trendchart .baseline{stroke:#b9b8b0;stroke-width:1}
+.trendchart .axis{font-size:11px;fill:#52514e;font-family:inherit}
+.trendchart .val{font-size:11px;font-weight:700;fill:#0b0b0b;font-family:inherit}
+.trendchart .bar.for path{fill:#2a78d6}
+.trendchart .bar.against path{fill:#eb6834}
+.trendchart .hit{fill:transparent}
+.trendchart .bar:hover path,.trendchart .bar:focus path{filter:brightness(.9)}
+.trendchart .bar:focus{outline:none}
 .posnote{font-size:11px;color:var(--short);font-weight:700;margin-top:2px;max-width:260px}
 .oppnote{font-size:13px;margin-top:6px;padding:7px 9px;background:#F6F7F5;border:1px solid var(--line);border-radius:8px;-webkit-user-select:text;user-select:text}
 
