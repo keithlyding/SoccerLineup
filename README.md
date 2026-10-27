@@ -85,7 +85,14 @@ tick or untick games):
 - a chart of goals scored and allowed per game in each quarter;
 - by formation: quarters played, goals scored and allowed, per quarter;
 - by goalkeeper: goals allowed per quarter in goal;
-- while each player is on the field: team goals scored and allowed.
+- while each player is on the field: team goals scored and allowed;
+- **a closer look at one quarter** (it starts on the quarter with the most
+  goals allowed; tap Q1-Q4 to switch): that quarter against the others; each
+  game's formation, keeper, score, lineup by line and bench, and how many
+  players also played the quarter before; that quarter by formation and by
+  keeper; and for each player, goals allowed and scored per game with them on
+  the field versus on the bench, and where they played. **Open** takes you to
+  that game at that quarter.
 
 Goals allowed by quarter need the opponent's goals recorded by quarter;
 games with only a total are left out of those figures, and the page says how

@@ -2294,6 +2294,160 @@ function trendChart(t){
   return '<div class="legend"><span class="key for"></span>Scored <span class="key against"></span>Allowed'+
          '<span class="hint" style="margin:0 0 0 8px">per game, in each '+pw.low+'</span></div>'+s;
 }
+/* ---------- a closer look at one period ----------
+   For the chosen period (say Q2) of the selected games: each game's
+   formation, keeper, score and lineup by line, who sat, and how many also
+   played the period before; then that period by formation, by keeper, and
+   for each player on the field versus on the bench. */
+function setTrendQ(q){ ui.trend=ui.trend||{opp:"", off:{}}; ui.trend.q=q; renderTrends(); }
+/* the period with the most goals allowed (the first one on a tie) */
+function worstPeriod(t){
+  var most=-1, worst=0, i;
+  if(!t.periodGaGames){ return 0; }
+  for(i=0;i<t.nq;i++){ if(t.periods[i].ga>most){ most=t.periods[i].ga; worst=i; } }
+  return worst;
+}
+function lineupByLine(g, q){
+  var f=qForm(g,q), row=g.plan[q]||[], lines={G:[], D:[], M:[], F:[]}, j;
+  for(j=0;j<f.pos.length && j<g.onField;j++){
+    lines[f.pos[j].z==="G"?"G":lineGroup(f.pos[j].z)].push({k:f.pos[j].k, id:row[j]||0});
+  }
+  return lines;
+}
+function computeQuarterLook(games, q, nq){
+  var L={q:q, games:[], gf:0, ga:0, gaGames:0, otherGf:0, otherPeriods:0, otherGa:0, otherGaPeriods:0,
+         forms:{}, keepers:{}, players:{}, stayedMost:{n:0, ga:0}, freshMost:{n:0, ga:0}};
+  function stat(){ return {n:0, gf:0, ga:0, gaN:0}; }
+  function add(s, gf, ga){ s.n++; s.gf+=gf; if(ga!==null){ s.ga+=ga; s.gaN++; } }
+  games.forEach(function(g){
+    if(g.nq!==nq){ return; }
+    var gfq=teamGoalsIn(g,q), gaq=oppGoalsIn(g,q), f=qForm(g,q), row=g.plan[q]||[], prev=q>0?(g.plan[q-1]||[]):null;
+    var on={}, keeper=0, outfield=0, stayed=0, bench=[], i, j, id;
+    for(i=0;i<g.nq;i++){
+      if(i===q){ continue; }
+      var o=oppGoalsIn(g,i);
+      L.otherGf+=teamGoalsIn(g,i); L.otherPeriods++;
+      if(o!==null){ L.otherGa+=o; L.otherGaPeriods++; }
+    }
+    L.gf+=gfq;
+    if(gaq!==null){ L.ga+=gaq; L.gaGames++; }
+    var fn=qFormName(g,q);
+    add(L.forms[fn]=L.forms[fn]||stat(), gfq, gaq);
+    for(j=0;j<row.length && j<f.pos.length && j<g.onField;j++){
+      id=row[j];
+      if(!id){ continue; }
+      on[id]=f.pos[j].z==="G"?"G":lineGroup(f.pos[j].z);
+      if(on[id]==="G"){ keeper=id; continue; }
+      outfield++;
+      if(prev && prev.indexOf(id)>=0){ stayed++; }
+    }
+    if(keeper){
+      var ks=L.keepers[keeper]=L.keepers[keeper]||stat();
+      ks.name=nameOf(keeper,g);
+      add(ks, gfq, gaq);
+    }
+    presentInQ(g,q).forEach(function(p){
+      var ps=L.players[p.id]=L.players[p.id]||{name:p.name, on:stat(), off:stat(), lines:{G:0, D:0, M:0, F:0}};
+      if(on[p.id]){ add(ps.on, gfq, gaq); ps.lines[on[p.id]]++; }
+      else { add(ps.off, gfq, gaq); bench.push(p.name); }
+    });
+    if(prev && outfield && gaq!==null){
+      var bucket=(stayed*2>outfield)?L.stayedMost:L.freshMost;
+      bucket.n++; bucket.ga+=gaq;
+    }
+    L.games.push({g:g, form:fn, keeper:keeper?nameOf(keeper,g):"", gf:gfq, ga:gaq,
+                  lines:lineupByLine(g,q), bench:bench, stayed:stayed, outfield:outfield, hasPrev:!!prev});
+  });
+  L.games.sort(function(x,y){ return (x.g.date||"").localeCompare(y.g.date||""); });
+  return L;
+}
+function openGameAt(id, q){ editGame(id); ui.q=q; render(); }
+function renderQuarterLook(games, t){
+  if(!t.nq || !t.periodGames){ return ""; }
+  var tf=ui.trend, q=(tf.q!==undefined && tf.q!==null && tf.q<t.nq) ? tf.q : worstPeriod(t);
+  var pw=periodWords(t.nq), lbl=pw.s+(q+1), prevLbl=pw.s+q, L=computeQuarterLook(games,q,t.nq), h="", i;
+  function rate(n,d){ return d?fmt1(n/d):"\u2014"; }
+  h+='<h3 style="margin-top:14px">A closer look at one '+pw.low+'</h3>'+
+     '<div class="qtabs qlookpick" role="tablist" aria-label="'+pw.one+' to look at">';
+  for(i=0;i<t.nq;i++){
+    h+='<button role="tab" aria-selected="'+(i===q)+'" onclick="setTrendQ('+i+')">'+pw.s+(i+1)+'</button>';
+  }
+  h+='</div>';
+  h+='<p class="trendsum"><b>'+lbl+' in '+L.games.length+' game'+(L.games.length===1?'':'s')+'</b>: scored '+L.gf+' ('+rate(L.gf,L.games.length)+' a game)'+
+     (L.gaGames?', allowed '+L.ga+' ('+rate(L.ga,L.gaGames)+' a game'+(L.gaGames<L.games.length?', from the '+L.gaGames+' recorded by '+pw.low:'')+')':', allowed: not recorded by '+pw.low+' yet')+
+     '. The other '+pw.lows+': '+rate(L.otherGf,L.otherPeriods)+' scored'+
+     (L.otherGaPeriods?', '+rate(L.otherGa,L.otherGaPeriods)+' allowed':'')+' a game each.</p>';
+
+  /* game by game */
+  h+='<h4>Game by game</h4><div class="qgames">';
+  L.games.forEach(function(x){
+    var names=function(list){
+      return list.map(function(s){ return '<span class="qpos">'+esc(s.k)+'</span> '+(s.id?esc(nameOf(s.id,x.g)):'<i>open</i>'); }).join(', ');
+    };
+    h+='<div class="qgame"><div class="qhead"><b>'+esc(x.g.date||"")+' '+esc(x.g.opp||"")+'</b>'+
+       '<span>'+esc(x.form)+'</span>'+
+       (x.keeper?'<span>GK '+esc(x.keeper)+'</span>':'')+
+       '<span>'+lbl+': us '+x.gf+', them '+(x.ga===null?'?':x.ga)+'</span>'+
+       (x.hasPrev&&x.outfield?'<span>'+x.stayed+' of '+x.outfield+' also played '+prevLbl+'</span>':'')+
+       '<button class="btn sm quiet" onclick="openGameAt('+x.g.id+','+q+')">Open</button></div>';
+    [['D','Defense'],['M','Midfield'],['F','Forwards']].forEach(function(z){
+      if(x.lines[z[0]].length){ h+='<div class="qline"><span class="qz">'+z[1]+'</span> '+names(x.lines[z[0]])+'</div>'; }
+    });
+    if(x.bench.length){ h+='<div class="qline"><span class="qz">Bench</span> '+esc(x.bench.join(", "))+'</div>'; }
+    h+='</div>';
+  });
+  h+='</div>';
+  if(L.stayedMost.n && L.freshMost.n){
+    h+='<p class="hint">When most of the field also played '+prevLbl+', '+lbl+' allowed '+rate(L.stayedMost.ga,L.stayedMost.n)+' a game ('+L.stayedMost.n+
+       ' game'+(L.stayedMost.n===1?'':'s')+'); with mostly fresh players, '+rate(L.freshMost.ga,L.freshMost.n)+' ('+L.freshMost.n+' game'+(L.freshMost.n===1?'':'s')+').</p>';
+  }
+
+  /* by formation and keeper, this period only */
+  var fk=Object.keys(L.forms).sort(function(x,y){ return L.forms[y].n-L.forms[x].n || x.localeCompare(y); });
+  h+='<h4>'+lbl+' by formation</h4><div class="scrollx"><table><thead><tr><th>Formation</th><th class="num">Games</th>'+
+     '<th class="num">Scored</th><th class="num">Allowed</th><th class="num">Scored a game</th><th class="num">Allowed a game</th></tr></thead><tbody>';
+  fk.forEach(function(k){
+    var s=L.forms[k];
+    h+='<tr><td>'+esc(k)+'</td><td class="num">'+s.n+'</td><td class="num">'+s.gf+'</td><td class="num">'+(s.gaN?s.ga:"\u2014")+'</td>'+
+       '<td class="num">'+rate(s.gf,s.n)+'</td><td class="num">'+rate(s.ga,s.gaN)+'</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  var kk=Object.keys(L.keepers).sort(function(x,y){ return L.keepers[y].n-L.keepers[x].n; });
+  if(kk.length){
+    h+='<h4>'+lbl+' by goalkeeper</h4><div class="scrollx"><table><thead><tr><th>Keeper</th><th class="num">Games</th>'+
+       '<th class="num">Allowed</th><th class="num">Allowed a game</th></tr></thead><tbody>';
+    kk.forEach(function(k){
+      var s=L.keepers[k];
+      h+='<tr><td>'+esc(s.name)+'</td><td class="num">'+s.n+'</td><td class="num">'+(s.gaN?s.ga:"\u2014")+'</td><td class="num">'+rate(s.ga,s.gaN)+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+
+  /* each player: on the field or on the bench in this period */
+  var pl=Object.keys(L.players).map(function(k){ return L.players[k]; });
+  pl.forEach(function(p){
+    p.diff=(p.on.gaN && p.off.gaN) ? p.on.ga/p.on.gaN - p.off.ga/p.off.gaN : null;
+  });
+  pl.sort(function(x,y){
+    var a=x.diff===null?-1e9:x.diff, b=y.diff===null?-1e9:y.diff;
+    return b-a || y.on.n-x.on.n || x.name.localeCompare(y.name);
+  });
+  h+='<h4>'+lbl+', each player: on the field or on the bench</h4><div class="scrollx"><table class="qplayers"><thead><tr><th>Player</th>'+
+     '<th class="num">On</th><th class="num">Bench</th><th>Where</th>'+
+     '<th class="num">Allowed a game, on</th><th class="num">Allowed a game, bench</th>'+
+     '<th class="num">Scored a game, on</th><th class="num">Scored a game, bench</th></tr></thead><tbody>';
+  pl.forEach(function(p){
+    var where=[['G','GK'],['D','D'],['M','M'],['F','F']].filter(function(z){ return p.lines[z[0]]; })
+              .map(function(z){ return z[1]+(p.lines[z[0]]>1?' \u00d7'+p.lines[z[0]]:''); }).join(', ');
+    h+='<tr><td>'+esc(p.name)+'</td><td class="num">'+p.on.n+'</td><td class="num">'+p.off.n+'</td><td>'+(where||"\u2014")+'</td>'+
+       '<td class="num">'+rate(p.on.ga,p.on.gaN)+'</td><td class="num">'+rate(p.off.ga,p.off.gaN)+'</td>'+
+       '<td class="num">'+rate(p.on.gf,p.on.n)+'</td><td class="num">'+rate(p.off.gf,p.off.n)+'</td></tr>';
+  });
+  h+='</tbody></table></div><p class="hint">Only games where the player was there count. Sorted so the biggest gap between goals allowed with the player on '+
+     'and on the bench comes first. With a handful of games one bad '+pw.low+' moves these a lot, and the other team, the score and who else was on the field all '+
+     'matter too \u2014 use this to decide what to watch for, not to judge a player.</p>';
+  return h;
+}
 function renderTrends(){
   var box=document.getElementById("trends");
   if(!box){ return; }
@@ -2372,6 +2526,7 @@ function renderTrends(){
   });
   h+='</tbody></table></div><p class="hint">Team goals while a player was on the field, sorted by scored minus allowed per '+sw.low+'. '+
      'A few games can swing these numbers a lot, so treat them as hints to look into, not verdicts.</p>';
+  h+=renderQuarterLook(games, t);
   box.innerHTML=h;
 }
 

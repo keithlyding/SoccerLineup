@@ -88,12 +88,67 @@ function assert(cond, msg) {
     'the chart shows scored and allowed per game in each quarter: ' + st.bars.join(' '));
   assert(st.titles[0] === 'Q1: Scored 0.7 per game', 'each bar has a hover description');
   assert(/come from 2 of 3 games/.test(st.text), 'it says goals allowed by quarter come from 2 of 3 games');
-  assert(st.forms.join('|') === 'By formation|By goalkeeper|While each player is on the field', 'tables by formation, by goalkeeper, and on the field');
+  assert(st.forms.join('|') === 'By formation|By goalkeeper|While each player is on the field|A closer look at one quarter', 'tables by formation, by goalkeeper, on the field, and a closer look at one quarter');
   const fRow = (await page.evaluate(() => Array.from(document.querySelectorAll('#trends .scrollx')[0].querySelectorAll('tbody tr')).map(r => Array.from(r.cells).map(c => c.textContent).join('|'))));
   // allowed per quarter divides by the quarters with opponent goals recorded (4 of 4-1-3's 8)
   assert(fRow.includes('4-1-3|8|5|2|0.6|0.5') && fRow.includes('3-3-2|4|2|1|0.5|0.3'),
     'by formation: 4-1-3 scored 5 in 8 quarters, allowed 2 in the 4 recorded; 3-3-2 scored 2, allowed 1 in 4: ' + fRow.join(' / '));
   if (shots) await page.locator('#trends').screenshot({ path: path.join(shots, (setup.iphone ? 'iphone-' : '') + 'trends.png') });
+
+  // ---------- a closer look at one quarter ----------
+  const look = () => page.evaluate(() => ({
+    tab: (document.querySelector('#trends .qlookpick [aria-selected="true"]') || {}).textContent,
+    sum: document.querySelectorAll('#trends .trendsum')[1].textContent,
+    games: Array.from(document.querySelectorAll('#trends .qgame')).map(x => x.querySelector('.qhead').textContent),
+    lines: Array.from(document.querySelectorAll('#trends .qgame')).map(x => Array.from(x.querySelectorAll('.qline')).map(l => l.textContent)),
+    h4: Array.from(document.querySelectorAll('#trends h4')).map(h => h.textContent),
+    players: Array.from(document.querySelectorAll('#trends table.qplayers tbody tr')).map(r => Array.from(r.cells).map(c => c.textContent))
+  }));
+  let lk = await look();
+  // Q1, Q3 and Q4 each allowed 1; the first of those is chosen to start
+  assert(lk.tab === 'Q1', 'the closer look starts on the quarter with the most goals allowed: ' + lk.tab);
+  await press('#trends .qlookpick button:nth-child(3)');
+  lk = await look();
+  assert(lk.tab === 'Q3' && /Q3 in 3 games: scored 2 \(0\.7 a game\), allowed 1 \(0\.5 a game, from the 2 recorded by quarter\)/.test(lk.sum),
+    'picking Q3: 3 games, scored 2, allowed 1 from the 2 recorded: ' + lk.sum);
+  // the other quarters: scored 5 in 9, allowed 2 in 6
+  assert(/The other quarters: 0\.6 scored, 0\.3 allowed a game each/.test(lk.sum), 'it compares with the other quarters: ' + lk.sum);
+  assert(lk.h4.join('|') === 'Game by game|Q3 by formation|Q3 by goalkeeper|Q3, each player: on the field or on the bench', 'sections: ' + lk.h4.join('|'));
+  const expect = await page.evaluate(() => {
+    const q = 2, out = { heads: [], players: {} };
+    const games = S.games.filter(g => !g.planned).slice().sort((a, b) => a.date.localeCompare(b.date));
+    games.forEach(g => {
+      const f = FORMATIONS[g.formations && g.formations[q] || g.formation], row = g.plan[q], prev = g.plan[q - 1];
+      const gk = row[f.pos.findIndex(p => p.z === 'G')];
+      const field = row.filter((id, j) => id && f.pos[j].z !== 'G');
+      const ga = Array.isArray(g.oppGoalsQ) ? g.oppGoalsQ[q] : null;
+      let gf = 0; Object.keys(g.goals).forEach(id => { gf += g.goals[id][q] || 0; });
+      out.heads.push({ opp: g.opp, gk: S.roster.find(p => p.id === gk).name, gf, ga, stayed: field.filter(id => prev.indexOf(id) >= 0).length, of: field.length,
+        bench: S.roster.filter(p => row.indexOf(p.id) < 0).length });
+      S.roster.forEach(p => {
+        const s = out.players[p.name] = out.players[p.name] || { on: 0, off: 0, onGa: 0, onGaN: 0 };
+        if (row.indexOf(p.id) >= 0) { s.on++; if (ga !== null) { s.onGa += ga; s.onGaN++; } } else { s.off++; }
+      });
+    });
+    return out;
+  });
+  assert(lk.games.length === 3 && expect.heads.every((e, i) => lk.games[i].includes(e.opp) && lk.games[i].includes('GK ' + e.gk) &&
+      lk.games[i].includes('Q3: us ' + e.gf + ', them ' + (e.ga === null ? '?' : e.ga)) && lk.games[i].includes(e.stayed + ' of ' + e.of + ' also played Q2')),
+    'each game shows its opponent, keeper, Q3 score and how many also played Q2: ' + lk.games.join(' / '));
+  assert(/3-3-2/.test(lk.games[2]) && /4-1-3/.test(lk.games[0]), 'each game shows the formation it used in Q3');
+  assert(lk.lines[0][0].startsWith('Defense') && lk.lines[0].some(l => l.startsWith('Forwards')) &&
+      expect.heads.every((e, i) => e.bench === 0 ? !lk.lines[i].some(l => l.startsWith('Bench')) : lk.lines[i].some(l => l.startsWith('Bench') && l.split(',').length === e.bench)),
+    'lineups by line with spot names, and who sat: ' + lk.lines[0].join(' / '));
+  assert(lk.players.length === 12 && lk.players.every(r => { const e = expect.players[r[0]];
+      return Number(r[1]) === e.on && Number(r[2]) === e.off && r[4] === (e.onGaN ? (Math.round(e.onGa / e.onGaN * 10) / 10).toFixed(1) : '—'); }),
+    'each player: Q3s on the field and on the bench, and goals allowed a game while on');
+  assert(lk.players.some(r => /^(GK|D|M|F)/.test(r[3])), 'it shows where each player played in Q3');
+  if (shots) await page.locator('#trends').screenshot({ path: path.join(shots, (setup.iphone ? 'iphone-' : '') + 'trends-q3.png') });
+  // Open goes to that game on Q3
+  await press('#trends .qgame:first-child button');
+  st = await page.evaluate(() => ({ edit: ui.editId === S.games[0].id, q: ui.q }));
+  assert(st.edit && st.q === 2, '"Open" opens that game on the Plan tab at Q3');
+  await page.evaluate(() => { stopEditing(); showTab('season'); });
 
   // filter by opponent
   await page.selectOption('#trends select', 'Wolfe');

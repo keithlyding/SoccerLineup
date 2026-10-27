@@ -212,6 +212,15 @@ input[readonly]{background:#F3F4F1;color:var(--ink-soft)}
 .trendchart .hit{fill:transparent}
 .trendchart .bar:hover path,.trendchart .bar:focus path{filter:brightness(.9)}
 .trendchart .bar:focus{outline:none}
+#trends h4{margin:12px 0 6px;font-size:12px;font-weight:700;color:var(--ink-soft)}
+.qlookpick{margin:6px 0 4px;max-width:320px}
+.qgames{display:flex;flex-direction:column;gap:8px}
+.qgame{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:#fff;font-size:13px}
+.qhead{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-bottom:4px}
+.qhead button{margin-left:auto}
+.qline{margin:2px 0;line-height:1.5}
+.qz{display:inline-block;min-width:66px;font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.03em}
+.qpos{font-size:11px;font-weight:700;color:var(--pitch)}
 .posnote{font-size:11px;color:var(--short);font-weight:700;margin-top:2px;max-width:260px}
 .oppnote{font-size:13px;margin-top:6px;padding:7px 9px;background:#F6F7F5;border:1px solid var(--line);border-radius:8px;-webkit-user-select:text;user-select:text}
 
