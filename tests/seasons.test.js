@@ -80,7 +80,8 @@ function assert(cond, msg) {
   await page.evaluate(() => setTrendKind('scrimmage', false));
   st = await page.evaluate(() => ({ played: playedGames().length, planned: S.games.filter(g => g.planned).length }));
   assert(st.played === 5, 'five played games in all');
-  await page.evaluate(() => showTab('season'));
+  await page.evaluate(() => showTab('setup'));
+  assert(await page.evaluate(() => !!document.querySelector('#setup button[onclick="startNewSeason()"]') && !document.querySelector('#season button[onclick="startNewSeason()"]')), '"Start a new season" is on the Setup tab, not the Season tab');
 
   // ---------- start a new season ----------
   dialogs.length = 0;

@@ -172,11 +172,6 @@
     <div id="gameList"></div>
   </div>
   <div class="card">
-    <h2>New season</h2>
-    <p class="hint">When the season is over: this puts the played games away with the roster and setup as they are, and starts the new season with the same roster. Past seasons stay on the Stats tab, with their players, stats and trends.</p>
-    <button class="btn" onclick="startNewSeason()">Start a new season</button>
-  </div>
-  <div class="card">
     <h2>Backup and transfer</h2>
     <div class="row">
       <button class="btn" id="backupBtn" onclick="exportData()">Download backup</button>
@@ -261,6 +256,12 @@
       <button class="btn" onclick="addPlayer()">Add player</button>
     </div>
     <p class="hint">Tier and positions drive auto-fill only. An unset tier is treated neutrally until assigned. Set goalkeeper priority after assigning Goalie as a primary or secondary position. None of these labels are printed on anything a parent sees.</p>
+  </div>
+
+  <div class="card">
+    <h2>New season</h2>
+    <p class="hint">When the season is over: this puts the played games away with the roster and setup as they are, and starts the new season with the same roster. Set the head coach above first. Past seasons stay on the Stats tab, with their players, stats and trends.</p>
+    <button class="btn" onclick="startNewSeason()">Start a new season</button>
   </div>
 
   <div class="card">

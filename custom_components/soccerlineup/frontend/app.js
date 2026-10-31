@@ -2353,6 +2353,7 @@ function startNewSeason(){
   if(HA){ sync.checkpoint="new season"; }
   save();
   showTab("setup");
+  window.scrollTo(0,0);
   alert(name+" is put away. See it any time on the Stats tab: choose it under Season.\n\n"+
         "Now get the roster ready for the new season: remove players who aren\u2019t coming back, add new ones, and check positions, tiers and goalkeepers.");
 }

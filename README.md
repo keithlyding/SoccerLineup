@@ -162,7 +162,7 @@ scrimmages included.
 
 ## Seasons
 
-When a season is over, **Season, Start a new season** puts its played games
+When a season is over, **Setup, Start a new season** puts its played games
 away with the roster and setup as they were, and the new season starts with
 the same roster, ready to edit. Planned games that haven't been played stay
 in the new season.
