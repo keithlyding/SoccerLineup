@@ -56,7 +56,7 @@ def ws_subscribe(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
         vol.Required("base_rev"): vol.Coerce(int),
         vol.Optional("client_id"): str,
         vol.Optional("force", default=False): bool,
-        vol.Optional("checkpoint"): vol.In(["import", "kept this device", "before restore"]),
+        vol.Optional("checkpoint"): vol.In(["import", "kept this device", "before restore", "new season"]),
     }
 )
 @websocket_api.async_response

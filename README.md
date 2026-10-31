@@ -99,6 +99,57 @@ games with only a total are left out of those figures, and the page says how
 many. A handful of games can swing these numbers a lot, so read them as
 hints.
 
+## Game day: the clock and subs
+
+The Plan tab's **Clock and subs** card works on the quarter (or half) you're
+viewing.
+
+- **Minutes per quarter** starts from Setup and can be changed for one game
+  (a shortened game, or a tournament), before or during it. Changing Setup
+  later doesn't overwrite it.
+- **Start Q1**, **Pause**, **Resume**, **End Q1**, then **Start Q2**. The clock
+  counts up and shows the time left. It keeps time from when it started, so
+  locking the phone or switching apps doesn't lose time, and in Home Assistant
+  every device sees the same clock. While it runs the phone's screen stays on
+  where the phone allows it. If you forget to end a quarter, **Ran 16:40 ·
+  change** fixes its length.
+- **Subs:** tap a player on the field and one on the bench (either order). The
+  sub is kept with the clock's time and the player coming on takes the same
+  spot. Without the clock running, it asks when. Each sub's time can be
+  changed, and Undo takes it back.
+- **Planned subs:** add one (when, who off, who on), or **Suggest subs** at
+  the times you give (7:30 for 15-minute quarters; 10:00 and 20:00 for
+  30-minute halves). Suggestions even out playing time across the game:
+  players with the fewest minutes come on for those with the most, and the
+  keeper stays. During the game a planned sub turns orange when it's due;
+  **Sub now** makes it, and **Make all of them now** makes every due one. If
+  you played a quarter without the clock, **played as planned** records the
+  planned subs at their planned times. Print-outs list each quarter's subs.
+- Goals entered while the clock runs keep their time, and the card lists the
+  quarter's subs and goals in order.
+
+The pitch on the Plan tab is each quarter's starting lineup. Playing time
+counts part of a quarter for coming on or going off partway: 3 minutes of a
+15-minute quarter is 0.2 of a quarter. The season's **Mins** column is the
+minutes actually played. Positions and Trends count everyone who played in a
+quarter, and the closer look at one quarter lists its subs.
+
+## Seasons
+
+When a season is over, **Season, Start a new season** puts its played games
+away with the roster and setup as they were, and the new season starts with
+the same roster, ready to edit. Planned games that haven't been played stay
+in the new season.
+
+On the Stats tab, the **Season** menu shows this season or any past one. A
+past season shows its record and format, every player's totals, the roster as
+it was (positions and tiers), its games with scores and notes, and the same
+Trends and Positions played as the current season. Past seasons can be
+renamed or deleted but not edited. **Add it as a past season** adds the
+season in a backup file (and any past seasons it had) without changing
+anything else: useful for backups from before this feature. Backups include
+the past seasons.
+
 ## Age groups and formations
 
 Setup has an **Age group** shortcut that fills in the match format. Leagues

@@ -64,6 +64,8 @@
 
   <div class="qtabs" id="qtabs"></div>
 
+  <div class="card" id="liveCard"></div>
+
   <div class="card">
     <div class="row spread" style="margin-bottom:8px">
       <h2 id="pitchTitle">Quarter 1</h2>
@@ -159,6 +161,11 @@
     <div id="gameList"></div>
   </div>
   <div class="card">
+    <h2>New season</h2>
+    <p class="hint">When the season is over: this puts the played games away with the roster and setup as they are, and starts the new season with the same roster. Past seasons stay on the Stats tab, with their players, stats and trends.</p>
+    <button class="btn" onclick="startNewSeason()">Start a new season</button>
+  </div>
+  <div class="card">
     <h2>Backup and transfer</h2>
     <div class="row">
       <button class="btn" id="backupBtn" onclick="exportData()">Download backup</button>
@@ -177,6 +184,18 @@
 </section>
 
 <section id="stats" hidden>
+  <div class="card">
+    <div class="row spread">
+      <label class="field">Season<select id="seasonPick" onchange="pickSeason(this.value)"></select></label>
+      <div class="row" id="seasonActions" hidden>
+        <button class="btn sm quiet" onclick="renameSeason()">Rename</button>
+        <button class="btn sm quiet" onclick="deleteSeason()">Delete</button>
+      </div>
+    </div>
+    <div id="pastSeason" hidden></div>
+    <p class="hint" style="margin-top:8px">Have a backup from an earlier season? <button class="btn sm quiet" onclick="document.getElementById('seasonFile').click()">Add it as a past season</button>
+      <input type="file" id="seasonFile" accept=".json,application/json,text/plain" hidden onchange="importSeason(event)"></p>
+  </div>
   <div class="card">
     <h2>Trends</h2>
     <div id="trends"></div>

@@ -217,7 +217,7 @@ var DEFAULT_ROSTER = [];
 
 var KEY = "panthers.rotation.v5";
 var S = null;
-var ui = {tab:"plan", q:0, selSlot:-1, selPlayer:0, editId:0};
+var ui = {tab:"plan", q:0, selSlot:-1, selPlayer:0, editId:0, season:0, subSel:null, ps:{}};
 
 /* ---------- Home Assistant mode ----------
    Opened from the Soccer Lineup item in Home Assistant's sidebar, the app
@@ -266,10 +266,10 @@ function copyRoster(roster){
 
 function freshState(){
   var st={
-    schemaVersion:7,
+    schemaVersion:8,
     cfg:{team:"Team", quarters:4, minutes:15, onField:9, formation:"3-3-2", autoBackup:true, keeperPlan:"halves"},
-    roster:copyRoster(DEFAULT_ROSTER), nextId:1, nextGameId:1,
-    current:null, games:[]
+    roster:copyRoster(DEFAULT_ROSTER), nextId:1, nextGameId:1, nextSeasonId:1,
+    current:null, games:[], seasons:[]
   };
   undoStack=[];
   S=st;
@@ -285,7 +285,8 @@ function newGame(){
     formation:S.cfg.formation, onField:S.cfg.onField,
     formations:defaultFormations(S.cfg.quarters,S.cfg.formation),
     plan:blankPlan(),
-    goals:{}, oppGoals:null, out:{}, left:{}, leaveOpen:{}
+    goals:{}, oppGoals:null, out:{}, left:{}, leaveOpen:{},
+    clock:{q:-1, since:0, acc:0}, periodSecs:[], subs:[], subPlan:[], goalTimes:[]
   };
 }
 
@@ -389,6 +390,15 @@ function normalizeGame(g, saved){
   if(!g.left){ g.left={}; }
   if(!g.leaveOpen){ g.leaveOpen={}; }
   if(g.notes===undefined || g.notes===null){ g.notes=""; }
+  if(!(Number(g.qlen)>0)){ g.qlen=S.cfg.minutes||15; }
+  /* game clock and subs (see "game clock and substitutions") */
+  if(!Array.isArray(g.subs)){ g.subs=[]; }
+  if(!Array.isArray(g.subPlan)){ g.subPlan=[]; }
+  if(!Array.isArray(g.goalTimes)){ g.goalTimes=[]; }
+  if(!Array.isArray(g.periodSecs)){ g.periodSecs=[]; }
+  g.subs=g.subs.filter(function(s){ return s && s.q<g.nq && s.off && s.on; });
+  g.subPlan=g.subPlan.filter(function(s){ return s && s.q<g.nq && s.off && s.on; });
+  if(!g.clock || typeof g.clock.q!=="number" || g.clock.q>=g.nq){ g.clock={q:-1, since:0, acc:0}; }
   /* opponent goals by period: an array once recorded that way, else absent */
   if(Array.isArray(g.oppGoalsQ)){
     while(g.oppGoalsQ.length<g.nq){ g.oppGoalsQ.push(0); }
@@ -420,7 +430,7 @@ function normalizeGame(g, saved){
 function normalizeState(st){
   if(!st || !st.cfg || !Array.isArray(st.roster)){ throw new Error("bad state"); }
   S=st;
-  S.schemaVersion=7;
+  S.schemaVersion=8;
   normalizeRoster(S.roster);
   if(S.cfg.autoBackup===undefined){ S.cfg.autoBackup=true; }
   if(["halves","turns","middle","whole"].indexOf(S.cfg.keeperPlan)<0){ S.cfg.keeperPlan="halves"; }
@@ -442,6 +452,17 @@ function normalizeState(st){
   }
   if(!S.current){ S.current=newGame(); }
   normalizeGame(S.current,false);
+  if(!Array.isArray(S.seasons)){ S.seasons=[]; }
+  var maxSeason=0;
+  S.seasons=S.seasons.filter(function(s){ return s && s.cfg && Array.isArray(s.roster) && Array.isArray(s.games); });
+  S.seasons.forEach(function(s){ if(Number(s.id)>maxSeason){ maxSeason=Number(s.id); } });
+  S.seasons.forEach(function(s){
+    if(!(Number(s.id)>0)){ s.id=++maxSeason; }
+    if(!s.name){ s.name="Season"; }
+    normalizeRoster(s.roster);
+    withSeason(s.id, function(){ s.games.forEach(function(g){ normalizeGame(g,true); }); });
+  });
+  if(!S.nextSeasonId || S.nextSeasonId<=maxSeason){ S.nextSeasonId=maxSeason+1; }
   return S;
 }
 
@@ -472,6 +493,7 @@ function rememberGameChange(label){
     game:g,label:label,
     plan:copyValue(g.plan),formations:copyValue(g.formations||[]),
     out:copyValue(g.out||{}),left:copyValue(g.left||{}),goals:copyValue(g.goals||{}),notes:(g.notes||""),
+    subs:copyValue(g.subs||[]),subPlan:copyValue(g.subPlan||[]),goalTimes:copyValue(g.goalTimes||[]),
     q:ui.q
   });
   if(undoStack.length>20){ undoStack.shift(); }
@@ -494,7 +516,9 @@ function undoLastChange(){
   g.left=copyValue(u.left||{});
   g.notes=(u.notes===undefined)?"":u.notes;
   g.goals=copyValue(u.goals);
+  if(u.subs){ g.subs=copyValue(u.subs); g.subPlan=copyValue(u.subPlan); g.goalTimes=copyValue(u.goalTimes); }
   ui.q=Math.min(u.q,g.nq-1);
+  ui.subSel=null;
   ui.selSlot=-1; ui.selPlayer=0;
   save(); render();
 }
@@ -526,15 +550,31 @@ function nameOf(id,g){ var p=P(id,g); return p?p.name:"\u2014"; }
 function esc(t){ return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function targetQtrs(){ var g=G(), n=presentRoster(g).length; return n?(g.onField*g.nq)/n:0; }
 
-function gameQtrs(g, scen){
-  var m={}, i, q, roster=gameRoster(g);
+/* Periods each player plays in game g: a whole period for being on the
+   field all of it, part of one for coming on or going off partway through.
+   withPlanned counts planned subs that haven't happened yet (for planning);
+   season totals count only the subs that did. */
+function gameQtrs(g, withPlanned){
+  var m={}, i, q, roster=gameRoster(g), id;
   for(i=0;i<roster.length;i++){ m[roster[i].id]=0; }
   for(q=0;q<g.nq;q++){
-    var r=rowAt(g,q,scen);
-    for(i=0;i<r.length;i++){ if(r[i] && m[r[i]]!==undefined){ m[r[i]]+=1; } }
+    var sec=periodSeconds(g,q,withPlanned===true), L=periodLen(g,q)||1;
+    for(id in sec){ if(Object.prototype.hasOwnProperty.call(sec,id) && m[id]!==undefined){ m[id]+=sec[id]/L; } }
+  }
+  for(id in m){ if(Object.prototype.hasOwnProperty.call(m,id)){ m[id]=Math.round(m[id]*100)/100; } }
+  return m;
+}
+/* seconds each player was on the field in game g */
+function gameSeconds(g){
+  var m={}, q, id, sec;
+  for(q=0;q<g.nq;q++){
+    sec=periodSeconds(g,q,false);
+    for(id in sec){ if(Object.prototype.hasOwnProperty.call(sec,id)){ m[id]=(m[id]||0)+sec[id]; } }
   }
   return m;
 }
+/* 2 -> "2", 2.5 -> "2.5" */
+function fmtQ(x){ return (Math.round(x*10)/10).toString(); }
 function isOut(g, playerId){ return !!(g.out && g.out[playerId]); }
 function presentRoster(g){
   return gameRoster(g).filter(function(p){ return !isOut(g,p.id); });
@@ -633,14 +673,18 @@ function seasonRecord(){
 }
 /* The opponent's goals in period q of game g, or null when only a total was kept. */
 function oppGoalsIn(g, q){
-  return Array.isArray(g.oppGoalsQ) ? (Number(g.oppGoalsQ[q])||0) : null;
+  if(Array.isArray(g.oppGoalsQ)){ return Number(g.oppGoalsQ[q])||0; }
+  /* a total of 0 is 0 in every period */
+  return g.oppGoals===0 ? 0 : null;
 }
+function oppByPeriod(g){ return Array.isArray(g.oppGoalsQ) || g.oppGoals===0; }
 function bumpOppGoal(q, delta){
   var g=G(), i;
   if(!Array.isArray(g.oppGoalsQ)){
     g.oppGoalsQ=[];
     for(i=0;i<g.nq;i++){ g.oppGoalsQ.push(0); }
   }
+  if(delta>0 || g.oppGoalsQ[q]>0){ noteGoalTime(g, q, "opp", delta); }
   g.oppGoalsQ[q]=Math.max(0,(Number(g.oppGoalsQ[q])||0)+delta);
   g.oppGoals=g.oppGoalsQ.reduce(function(s,x){ return s+(Number(x)||0); },0);
   if(g.planned){ g.planned=false; }   /* a score means it was played */
@@ -671,8 +715,465 @@ function bumpGoal(playerId, q, delta){
   while(g.goals[playerId].length<g.nq){ g.goals[playerId].push(0); }
   var v=(g.goals[playerId][q]||0)+delta;
   if(v<0){ v=0; }
+  if(v!==(g.goals[playerId][q]||0)){ noteGoalTime(g, q, playerId, delta); }
   g.goals[playerId][q]=v;
   save(); render();
+}
+
+/* ---------- game clock and substitutions ----------
+   The clock times each period from its start; it keeps going while the
+   phone is locked because it works from the start time. A period's lineup
+   on the Plan tab is who starts it. Subs made during it are kept with the
+   time they happened (seconds into the period), and planned subs are the
+   coach's plan for it: "Sub now" makes one happen at the clock's time.
+   Minutes played come from the starting lineups and the subs made. */
+function clockNow(){ return Date.now(); }
+function fmtClock(sec){
+  var s=Math.max(0,Math.round(sec||0)), m=Math.floor(s/60), r=s%60;
+  return m+":"+(r<10?"0":"")+r;
+}
+/* "7:30", "7.5" or "7" (minutes) -> seconds; null if it isn't a time */
+function parseClock(text){
+  var t=String(text===undefined||text===null?"":text).trim(), m;
+  if(!t){ return null; }
+  m=/^(\d{1,3}):(\d{1,2})$/.exec(t);
+  if(m){ return Number(m[1])*60+Math.min(59,Number(m[2])); }
+  if(/^\d+(\.\d+)?$/.test(t)){ return Math.round(Number(t)*60); }
+  return null;
+}
+/* how long period q lasted: as the clock had it when it ended, else as planned */
+function periodLen(g,q){
+  var s=g.periodSecs && g.periodSecs[q];
+  return (typeof s==="number") ? s : (Number(g.qlen)||15)*60;
+}
+function clockElapsed(g,q){
+  var c=g.clock;
+  if(c && c.q===q){ return Math.max(0,Math.floor(((c.acc||0)+(c.since?clockNow()-c.since:0))/1000)); }
+  return (g.periodSecs && typeof g.periodSecs[q]==="number") ? g.periodSecs[q] : 0;
+}
+function clockRunning(g){ return !!(g && g.clock && g.clock.since); }
+function clockStarted(g,q){ return !!((g.clock && g.clock.q===q) || (g.periodSecs && typeof g.periodSecs[q]==="number")); }
+function clearGameClock(g){
+  g.clock={q:-1, since:0, acc:0}; g.periodSecs=[]; g.subs=[]; g.subPlan=[]; g.goalTimes=[];
+}
+/* start period q's clock, resume it after a pause, or carry on after it ended */
+function startClock(q){
+  var g=G(), c=g.clock;
+  if(c && c.q===q){
+    if(!c.since){ c.since=clockNow(); }
+  }else{
+    if(c && c.q>=0){ endPeriodClock(g); }
+    var done=(g.periodSecs && typeof g.periodSecs[q]==="number") ? g.periodSecs[q] : 0;
+    if(g.periodSecs){ g.periodSecs[q]=null; }
+    g.clock={q:q, since:clockNow(), acc:done*1000};
+  }
+  ui.q=q; ui.subSel=null;
+  save(); render(); keepAwake(true);
+}
+function pauseClock(){
+  var g=G(), c=g.clock;
+  if(!c || !c.since){ return; }
+  c.acc=(c.acc||0)+(clockNow()-c.since); c.since=0;
+  save(); render(); keepAwake(false);
+}
+function endPeriodClock(g){
+  var c=g.clock;
+  if(!c || c.q<0){ return; }
+  if(!g.periodSecs){ g.periodSecs=[]; }
+  g.periodSecs[c.q]=clockElapsed(g,c.q);
+  g.clock={q:-1, since:0, acc:0};
+}
+function endPeriod(){
+  var g=G(); endPeriodClock(g); save(); render(); keepAwake(false);
+}
+/* fix how long a period ran (forgot to stop the clock) */
+function setPeriodLength(q){
+  var g=G(), v=prompt("How long did "+PW(g).one.toLowerCase()+" "+(q+1)+" run? (minutes, e.g. 15 or 14:30)", fmtClock(periodLen(g,q)));
+  if(v===null){ return; }
+  var t=parseClock(v);
+  if(t===null || t<=0){ alert("That isn't a time."); return; }
+  if(!g.periodSecs){ g.periodSecs=[]; }
+  g.periodSecs[q]=t;
+  save(); render();
+}
+function setGameLength(v){
+  var g=G(), n=Math.round(Number(v));
+  if(!(n>=1 && n<=60)){ render(); return; }
+  g.qlen=n;
+  save(); render();
+}
+
+function subsIn(g,q){
+  return (g.subs||[]).filter(function(s){ return s.q===q; }).sort(function(a,b){ return a.t-b.t; });
+}
+function pendingPlanned(g,q){
+  return (g.subPlan||[]).filter(function(s){ return s.q===q && !s.done; });
+}
+function subsFor(g,q,withPlanned){
+  var list=subsIn(g,q);
+  if(withPlanned){ list=list.concat(pendingPlanned(g,q)).sort(function(a,b){ return a.t-b.t; }); }
+  return list;
+}
+function applySub(row, s){
+  var k=row.indexOf(s.off);
+  if(k>=0 && row.indexOf(s.on)<0){ row[k]=s.on; return k; }
+  return -1;
+}
+/* the lineup at second t of period q (after every sub when t is left out) */
+function lineupAt(g,q,t,withPlanned){
+  var row=(g.plan[q]||[]).slice(0,g.onField), list=subsFor(g,q,withPlanned), i;
+  for(i=0;i<list.length;i++){
+    if(t!==undefined && t!==null && list[i].t>t){ break; }
+    applySub(row,list[i]);
+  }
+  return row;
+}
+/* seconds each player was on the field in period q, up to second upto */
+function periodSeconds(g,q,withPlanned,upto){
+  var L=periodLen(g,q), end=(upto===undefined||upto===null)?L:Math.min(upto,L);
+  var row=(g.plan[q]||[]).slice(0,g.onField), sec={}, last=0, list=subsFor(g,q,withPlanned), i;
+  function run(until){
+    var to=Math.max(last,Math.min(until,end)), d=to-last;
+    if(d>0){ row.forEach(function(id){ if(id){ sec[id]=(sec[id]||0)+d; } }); }
+    last=to;
+  }
+  for(i=0;i<list.length;i++){ run(list[i].t); if(list[i].t<=end){ applySub(row,list[i]); } }
+  run(end);
+  return sec;
+}
+/* everyone on the field at some point in period q, with the spot they took */
+function periodAppearances(g,q){
+  var row=(g.plan[q]||[]).slice(0,g.onField), out=[], seen={}, list=subsIn(g,q), i, k;
+  for(i=0;i<row.length;i++){ if(row[i] && !seen[row[i]]){ seen[row[i]]=1; out.push({id:row[i], slot:i}); } }
+  for(i=0;i<list.length;i++){
+    k=applySub(row,list[i]);
+    if(k>=0 && !seen[list[i].on]){ seen[list[i].on]=1; out.push({id:list[i].on, slot:k}); }
+  }
+  return out;
+}
+function spotName(g,q,k){ var f=qForm(g,q); return (f.pos[k]||{}).k||""; }
+/* when a sub or goal happened: the clock's time, or asked for if the
+   period's clock hasn't been started */
+function askWhen(g,q,what){
+  if(clockStarted(g,q)){ return clockElapsed(g,q); }
+  var v=prompt("When was "+what+"? Minutes into "+PW(g).one.toLowerCase()+" "+(q+1)+" (e.g. 7:30)", fmtClock(periodLen(g,q)/2));
+  if(v===null){ return null; }
+  var t=parseClock(v);
+  if(t===null){ alert("That isn't a time."); return null; }
+  return Math.min(t, periodLen(g,q));
+}
+function makeSub(off, on, t){
+  var g=G(), q=ui.q, now=lineupAt(g,q,t);
+  if(now.indexOf(off)<0){ alert(nameOf(off,g)+" isn't on the field then."); return false; }
+  if(now.indexOf(on)>=0){ alert(nameOf(on,g)+" is already on the field."); return false; }
+  if(!availableIn(g,on,q)){ alert(nameOf(on,g)+" isn't available."); return false; }
+  rememberGameChange("sub");
+  g.subs.push({q:q, t:t, off:off, on:on});
+  ui.subSel=null;
+  return true;
+}
+/* tap a player on the field and one on the bench (either order) to sub */
+function tapLive(id, onField){
+  var g=G(), sel=ui.subSel;
+  if(sel && sel.id===id){ ui.subSel=null; renderLive(); return; }
+  if(sel && sel.onField!==onField){
+    var off=onField?id:sel.id, on=onField?sel.id:id;
+    var t=askWhen(g,ui.q,nameOf(on,g)+" coming on for "+nameOf(off,g));
+    if(t===null){ ui.subSel=null; renderLive(); return; }
+    if(makeSub(off,on,t)){ save(); render(); }
+    return;
+  }
+  ui.subSel={id:id, onField:onField};
+  renderLive();
+}
+function removeSub(i){
+  var g=G();
+  rememberGameChange("remove sub");
+  var s=g.subs[i];
+  g.subs.splice(i,1);
+  /* a planned sub that was made this way is planned again */
+  (g.subPlan||[]).forEach(function(p){ if(p.done && p.q===s.q && p.off===s.off && p.on===s.on){ p.done=false; } });
+  save(); render();
+}
+function setSubTime(i){
+  var g=G(), s=g.subs[i];
+  var v=prompt("When did "+nameOf(s.on,g)+" come on for "+nameOf(s.off,g)+"? (e.g. 7:30)", fmtClock(s.t));
+  if(v===null){ return; }
+  var t=parseClock(v);
+  if(t===null){ alert("That isn't a time."); return; }
+  rememberGameChange("sub time");
+  s.t=Math.min(t,periodLen(g,s.q));
+  save(); render();
+}
+/* goals scored while the clock runs keep the time */
+function noteGoalTime(g, q, who, delta){
+  if(!g.goalTimes){ g.goalTimes=[]; }
+  if(delta>0){
+    if(g.clock && g.clock.q===q){ g.goalTimes.push({q:q, t:clockElapsed(g,q), who:who}); }
+    return;
+  }
+  var i;
+  for(i=g.goalTimes.length-1;i>=0;i--){
+    if(g.goalTimes[i].q===q && String(g.goalTimes[i].who)===String(who)){ g.goalTimes.splice(i,1); return; }
+  }
+}
+
+/* ---------- planned subs ---------- */
+function setPlanForm(field, v){ ui.ps=ui.ps||{}; ui.ps[field]=v; }
+function addPlannedSub(){
+  var g=G(), q=ui.q, ps=ui.ps||{}, t=parseClock(ps.t), off=Number(ps.off), on=Number(ps.on);
+  if(t===null){ alert("Enter when, in minutes into the "+PW(g).low+" (e.g. 7:30)."); return; }
+  if(!off || !on || off===on){ alert("Choose who comes off and who goes on."); return; }
+  var row=lineupAt(g,q,t,true);
+  if(row.indexOf(off)<0){ alert(nameOf(off,g)+" isn't planned to be on the field at "+fmtClock(t)+"."); return; }
+  if(row.indexOf(on)>=0){ alert(nameOf(on,g)+" is already planned to be on the field at "+fmtClock(t)+"."); return; }
+  if(!availableIn(g,on,q)){ alert(nameOf(on,g)+" isn't available."); return; }
+  rememberGameChange("plan a sub");
+  g.subPlan.push({q:q, t:Math.min(t,periodLen(g,q)), off:off, on:on, done:false});
+  ui.ps={t:ps.t};
+  save(); render();
+}
+function removePlannedSub(i){
+  var g=G();
+  rememberGameChange("remove planned sub");
+  g.subPlan.splice(i,1);
+  save(); render();
+}
+/* make a planned sub happen now (or at its planned time if the clock isn't running) */
+function doPlannedSub(i){
+  var g=G(), p=g.subPlan[i];
+  if(!p){ return; }
+  ui.q=p.q;
+  var t=clockStarted(g,p.q) ? clockElapsed(g,p.q) : p.t;
+  if(makeSub(p.off,p.on,t)){ p.done=true; save(); }
+  render();
+}
+/* every planned sub that's due, made now in one go */
+function doDueSubs(){
+  var g=G(), q=ui.q, t=clockElapsed(g,q), list=pendingPlanned(g,q).filter(function(p){ return p.t<=t; }).sort(function(a,b){ return a.t-b.t; }), i;
+  if(!list.length){ return; }
+  rememberGameChange("subs");
+  suppressUndo=true;
+  for(i=0;i<list.length;i++){
+    var row=lineupAt(g,q,t);
+    if(row.indexOf(list[i].off)>=0 && row.indexOf(list[i].on)<0 && availableIn(g,list[i].on,q)){
+      g.subs.push({q:q, t:t, off:list[i].off, on:list[i].on}); list[i].done=true;
+    }
+  }
+  suppressUndo=false;
+  ui.subSel=null;
+  save(); render();
+}
+/* after a period played without the clock: the planned subs happened as planned */
+function planToSubs(q){
+  var g=G(), list=pendingPlanned(g,q).sort(function(a,b){ return a.t-b.t; }), made=0, i;
+  rememberGameChange("planned subs made");
+  suppressUndo=true;
+  ui.q=q;
+  for(i=0;i<list.length;i++){
+    var row=lineupAt(g,q,list[i].t);
+    if(row.indexOf(list[i].off)>=0 && row.indexOf(list[i].on)<0){
+      g.subs.push({q:q, t:list[i].t, off:list[i].off, on:list[i].on});
+      list[i].done=true; made++;
+    }
+  }
+  suppressUndo=false;
+  save(); render();
+  if(made<list.length){ alert((list.length-made)+" planned sub"+(list.length-made===1?"":"s")+" couldn't be made: the player coming off wasn't on the field then."); }
+}
+/* sub times spread through a period: 15 minutes -> 7:30; 30 -> 10:00, 20:00 */
+function defaultSubMarks(g){
+  var L=(Number(g.qlen)||15)*60, n=Math.max(2,Math.ceil((Number(g.qlen)||15)/10)), out=[], i;
+  for(i=1;i<n;i++){ out.push(Math.round((L*i/n)/30)*30); }
+  return out;
+}
+function parseMarks(text){
+  return String(text||"").split(/[,\s]+/).map(parseClock).filter(function(x){ return x!==null && x>0; })
+    .sort(function(a,b){ return a-b; });
+}
+/* Plan subs for period q at the given times so playing time evens out: at
+   each time, the players on the bench with the fewest minutes in the game
+   come on for the outfield players with the most, where that gap is worth
+   a change; among those, the bench player's fit for the spot decides. The
+   keeper isn't changed. Replaces the period's planned subs not yet made. */
+function suggestSubs(){
+  var g=G(), q=ui.q, L=periodLen(g,q), f=qForm(g,q);
+  var marks=parseMarks((ui.ps||{}).marks!==undefined ? ui.ps.marks : defaultSubMarks(g).map(fmtClock).join(", "))
+    .filter(function(m){ return m<L && (!clockStarted(g,q) || m>clockElapsed(g,q)); });
+  if(!marks.length){ alert("Enter one or more sub times within the "+PW(g).low+", e.g. 7:30."); return; }
+  rememberGameChange("suggest subs");
+  g.subPlan=g.subPlan.filter(function(s){ return !(s.q===q && !s.done); });
+  var before={}, qq, id, sec, made=0;
+  for(qq=0;qq<q;qq++){
+    sec=periodSeconds(g,qq,true);
+    for(id in sec){ if(Object.prototype.hasOwnProperty.call(sec,id)){ before[id]=(before[id]||0)+sec[id]; } }
+  }
+  var present=presentInQ(g,q).map(function(p){ return p.id; });
+  marks.forEach(function(m, mi){
+    var row=lineupAt(g,q,m,true), upto=periodSeconds(g,q,true,m), total={};
+    present.forEach(function(pid){ total[pid]=(before[pid]||0)+(upto[pid]||0); });
+    var segment=(mi+1<marks.length?marks[mi+1]:L)-m, minGap=Math.max(60,segment/2);
+    var bench=present.filter(function(pid){ return row.indexOf(pid)<0; })
+                     .sort(function(x,y){ return total[x]-total[y]; });
+    var taken={};
+    bench.forEach(function(b){
+      var best=-1, bestScore=-1e9, k;
+      for(k=0;k<row.length && k<f.pos.length;k++){
+        var fid=row[k];
+        if(!fid || taken[fid] || f.pos[k].z==="G"){ continue; }
+        var gap=total[fid]-total[b];
+        if(gap<minGap){ continue; }
+        var score=gap/60+Math.max(0,fitScore(P(b,g),f.pos[k]))/25;
+        if(score>bestScore){ bestScore=score; best=k; }
+      }
+      if(best<0){ return; }
+      taken[row[best]]=true;
+      g.subPlan.push({q:q, t:m, off:row[best], on:b, done:false});
+      made++;
+    });
+  });
+  save(); render();
+  if(!made){ alert("No subs needed: playing time is already even enough at those times."); }
+}
+
+/* ---------- keeping the screen on while the clock runs ---------- */
+var wakeLock=null;
+function keepAwake(on){
+  try{
+    if(on && clockRunning(G()) && navigator.wakeLock && !wakeLock){
+      navigator.wakeLock.request("screen").then(function(l){
+        wakeLock=l;
+        l.addEventListener("release",function(){ wakeLock=null; });
+      }).catch(function(){});
+    }else if(!on && wakeLock){
+      wakeLock.release().catch(function(){});
+      wakeLock=null;
+    }
+  }catch(e){}
+}
+document.addEventListener("visibilitychange",function(){
+  if(document.visibilityState==="visible" && S && clockRunning(G())){ keepAwake(true); render(); }
+});
+/* once a second while a clock runs: the time and which planned subs are due */
+function tickClock(){
+  if(!S){ return; }
+  var g=G();
+  if(!g || !clockRunning(g) || ui.tab!=="plan"){ return; }
+  var q=g.clock.q, el=document.getElementById("clockTime");
+  if(!el){ return; }
+  var e=clockElapsed(g,q), L=(Number(g.qlen)||15)*60;
+  el.textContent=fmtClock(e);
+  el.classList.toggle("over", e>L);
+  var left=document.getElementById("clockLeft");
+  if(left){ left.textContent=e>L ? fmtClock(e-L)+" over" : fmtClock(L-e)+" left"; }
+  if(q!==ui.q){ return; }
+  var due=[], rows=document.querySelectorAll("#plannedSubs [data-t]"), i;
+  for(i=0;i<rows.length;i++){
+    var isDue=e>=Number(rows[i].getAttribute("data-t"));
+    rows[i].classList.toggle("due", isDue);
+    if(isDue){ due.push(rows[i].getAttribute("data-what")); }
+  }
+  var d=document.getElementById("subDue");
+  if(d){
+    d.hidden=!due.length;
+    document.getElementById("subDueText").textContent=due.length?(due.length===1?"Sub due: ":"Subs due: ")+due.join("; "):"";
+    document.getElementById("subDueAll").hidden=due.length<2;
+  }
+}
+setInterval(tickClock, 1000);
+
+/* the Clock and subs card on the Plan tab, for the period being viewed */
+function renderLive(){
+  var box=document.getElementById("liveCard");
+  if(!box){ return; }
+  var g=G(), q=ui.q, pw=PW(g), lbl=pw.s+(q+1), c=g.clock||{q:-1}, h="", i;
+  var running=c.q===q && !!c.since, paused=c.q===q && !c.since, ended=!running && !paused && typeof (g.periodSecs||[])[q]==="number";
+  var other=c.q>=0 && c.q!==q, e=clockElapsed(g,q), L=(Number(g.qlen)||15)*60;
+  h+='<div class="row spread"><h2>Clock and subs <span class="hint" style="margin:0">&mdash; '+pw.one+' '+(q+1)+'</span></h2>'+
+     '<label class="field">Minutes per '+pw.low+'<input type="number" id="fQlen" min="1" max="60" inputmode="numeric" value="'+g.qlen+'" style="width:70px" onchange="setGameLength(this.value)"></label></div>';
+  h+='<div class="clockrow"><span class="clocktime'+(e>L?' over':'')+'" id="'+(c.q===q?'clockTime':'clockStill')+'">'+fmtClock(e)+'</span>'+
+     '<span class="hint" style="margin:0"'+(c.q===q?' id="clockLeft"':'')+'>'+(e>L?fmtClock(e-L)+' over':fmtClock(L-e)+' left')+'</span><span class="row">';
+  if(running){
+    h+='<button class="btn sm" onclick="pauseClock()">Pause</button><button class="btn sm quiet" onclick="endPeriod()">End '+lbl+'</button>';
+  }else if(paused){
+    h+='<button class="btn sm green" onclick="startClock('+q+')">Resume</button><button class="btn sm quiet" onclick="endPeriod()">End '+lbl+'</button>';
+  }else if(ended){
+    h+='<button class="btn sm quiet" onclick="setPeriodLength('+q+')">Ran '+fmtClock(periodLen(g,q))+' &middot; change</button>'+
+       '<button class="btn sm quiet" onclick="startClock('+q+')">Resume</button>'+
+       (q+1<g.nq?'<button class="btn sm green" onclick="startClock('+(q+1)+')">Start '+pw.s+(q+2)+'</button>':'');
+  }else{
+    h+='<button class="btn sm green" onclick="startClock('+q+')">Start '+lbl+'</button>';
+  }
+  h+='</span></div>';
+  if(other){
+    h+='<p class="hint">'+pw.s+(c.q+1)+'\u2019s clock is '+(c.since?'running':'paused')+' at <span id="clockTime">'+fmtClock(clockElapsed(g,c.q))+'</span>. '+
+       '<button class="btn sm quiet" onclick="ui.q='+c.q+';render()">Go to '+pw.s+(c.q+1)+'</button></p>';
+  }
+  h+='<p class="warn" id="subDue" hidden><span id="subDueText"></span> <button class="btn sm green" id="subDueAll" onclick="doDueSubs()">Make all of them now</button></p>';
+
+  /* sub: on the field now and the bench */
+  var now=lineupAt(g,q), f=qForm(g,q), sel=ui.subSel;
+  var bench=presentInQ(g,q).filter(function(p){ return now.indexOf(p.id)<0; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
+  h+='<h3 style="margin-top:8px">'+(running||paused?'On the field now':(subsIn(g,q).length?'On the field after the subs':'Starting lineup'))+' <span class="hint" style="margin:0">&mdash; tap one here and one on the bench to sub</span></h3><div class="chips livefield">';
+  for(i=0;i<now.length && i<f.pos.length;i++){
+    if(!now[i]){ continue; }
+    h+='<button class="chip'+(sel&&sel.id===now[i]?' sel':'')+'" onclick="tapLive('+now[i]+',true)"><span class="n">'+esc(f.pos[i].k)+'</span>'+esc(nameOf(now[i],g))+'</button>';
+  }
+  h+='</div><h3 style="margin-top:6px">Bench</h3><div class="chips livebench">';
+  bench.forEach(function(p){
+    h+='<button class="chip'+(sel&&sel.id===p.id?' sel':'')+'" onclick="tapLive('+p.id+',false)">'+esc(p.name)+'</button>';
+  });
+  h+=(bench.length?'':'<span class="hint">Nobody on the bench.</span>')+'</div>';
+  if(sel){ h+='<p class="hint" style="color:var(--pitch)">'+esc(nameOf(sel.id,g))+' chosen: now tap who '+(sel.onField?'comes on':'comes off')+'.</p>'; }
+
+  /* planned subs */
+  var plan=(g.subPlan||[]).map(function(p,ix){ return {p:p, ix:ix}; }).filter(function(x){ return x.p.q===q; })
+             .sort(function(a,b){ return a.p.t-b.p.t; });
+  h+='<h3 style="margin-top:10px">Planned subs</h3><div id="plannedSubs">';
+  if(!plan.length){ h+='<p class="hint">None planned for '+lbl+'.</p>'; }
+  var prow=(g.plan[q]||[]).slice(0,g.onField), pending=pendingPlanned(g,q).length;
+  plan.forEach(function(x){
+    var p=x.p, k=lineupAt(g,q,p.t,true).indexOf(p.on), spot=k>=0?spotName(g,q,k):"";
+    var what=nameOf(p.on,g)+' on for '+nameOf(p.off,g)+(spot?' ('+spot+')':'');
+    h+='<div class="plansub'+(p.done?' done':'')+'"'+(p.done?'':' data-t="'+p.t+'" data-what="'+esc(what)+'"')+'>'+
+       '<b>'+fmtClock(p.t)+'</b> <span>'+esc(what)+'</span>'+
+       (p.done?' <span class="hint" style="margin:0">made</span>':' <button class="btn sm green" onclick="doPlannedSub('+x.ix+')">Sub now</button>')+
+       ' <button class="btn sm quiet" onclick="removePlannedSub('+x.ix+')" aria-label="Remove this planned sub">&times;</button></div>';
+  });
+  h+='</div>';
+  if(pending && !running && !paused){
+    h+='<button class="btn sm quiet" onclick="planToSubs('+q+')">'+lbl+' was played as planned: make these subs</button>';
+  }
+  /* add one, or suggest */
+  var ps=ui.ps||{}, opts=function(list, chosen){
+    return list.map(function(p){ return '<option value="'+p.id+'"'+(String(chosen)===String(p.id)?' selected':'')+'>'+esc(p.name)+'</option>'; }).join("");
+  };
+  var everyone=presentInQ(g,q).slice().sort(function(a,b){ return a.name.localeCompare(b.name); });
+  var marksText=ps.marks!==undefined?ps.marks:defaultSubMarks(g).map(fmtClock).join(", ");
+  h+='<div class="row planform" style="margin-top:8px">'+
+     '<label class="field">At<input id="psTime" value="'+esc(ps.t||'')+'" placeholder="7:30" style="width:64px" oninput="setPlanForm(\'t\',this.value)"></label>'+
+     '<label class="field">Off<select id="psOff" onchange="setPlanForm(\'off\',this.value)"><option value="">Who?</option>'+opts(everyone,ps.off)+'</select></label>'+
+     '<label class="field">On<select id="psOn" onchange="setPlanForm(\'on\',this.value)"><option value="">Who?</option>'+opts(everyone,ps.on)+'</select></label>'+
+     '<button class="btn sm" onclick="addPlannedSub()">Add</button></div>'+
+     '<div class="row" style="margin-top:6px"><label class="field">Suggest subs at<input id="psMarks" value="'+esc(marksText)+'" style="width:120px" oninput="setPlanForm(\'marks\',this.value)"></label>'+
+     '<button class="btn sm green" onclick="suggestSubs()">Suggest subs for '+lbl+'</button></div>'+
+     '<p class="hint">Suggestions even out playing time across the game: players with the fewest minutes come on for those with the most, keeping the keeper. They replace '+lbl+'\u2019s planned subs that haven\u2019t been made.</p>';
+
+  /* what happened: subs and goals with times */
+  var events=[];
+  (g.subs||[]).forEach(function(s,ix){
+    if(s.q!==q){ return; }
+    events.push({t:s.t, html:'<b>'+fmtClock(s.t)+'</b> <button class="linkbtn" onclick="setSubTime('+ix+')" title="Change the time">\u21c4</button> '+
+      esc(nameOf(s.on,g))+' on for '+esc(nameOf(s.off,g))+' <button class="btn sm quiet" onclick="removeSub('+ix+')" aria-label="Remove this sub">&times;</button>'});
+  });
+  (g.goalTimes||[]).forEach(function(x){
+    if(x.q!==q){ return; }
+    events.push({t:x.t, html:'<b>'+fmtClock(x.t)+'</b> \u26bd '+(x.who==="opp"?esc(g.opp||"Opponent"):esc(nameOf(Number(x.who),g)))});
+  });
+  events.sort(function(a,b){ return a.t-b.t; });
+  h+='<h3 style="margin-top:10px">'+lbl+' so far</h3>'+(events.length?'<div class="timeline">'+events.map(function(x){ return '<div>'+x.html+'</div>'; }).join("")+'</div>':'<p class="hint">No subs made yet. Goals entered while the clock runs show here with their time.</p>');
+  box.innerHTML=h;
+  tickClock();
 }
 
 function seasonPlayers(){
@@ -694,7 +1195,7 @@ function seasonTotals(){
   }
   var games=playedGames();
   for(i=0;i<games.length;i++){
-    var g=games[i], qt=gameQtrs(g), roster=gameRoster(g);
+    var g=games[i], qt=gameQtrs(g), secs=gameSeconds(g), roster=gameRoster(g);
     for(j=0;j<roster.length;j++){
       var id=roster[j].id;
       if(!t[id]){ t[id]={qtrs:0,satQ:0,mins:0,games:0,goals:0,availQ:0,missed:0}; }
@@ -704,7 +1205,7 @@ function seasonTotals(){
       t[id].qtrs+=qp;
       t[id].satQ+=Math.max(0,avail-qp);
       t[id].availQ+=avail;
-      t[id].mins+=qp*g.qlen;
+      t[id].mins+=(secs[id]||0)/60;
       t[id].games+=1;
       t[id].goals+=gameGoals(g,id);
     }
@@ -713,6 +1214,9 @@ function seasonTotals(){
      A player who missed a game is neither owed time nor penalised for it. */
   for(i=0;i<players.length;i++){
     var r=t[players[i].id];
+    r.qtrs=Math.round(r.qtrs*10)/10;
+    r.satQ=Math.round(r.satQ*10)/10;
+    r.mins=Math.round(r.mins);
     r.sitRate = r.availQ>0 ? (r.satQ/r.availQ) : 0;
     r.playRate = r.availQ>0 ? (r.qtrs/r.availQ) : 0;
   }
@@ -1271,6 +1775,7 @@ function applyAgePreset(v){
     g.plan=blankPlan(g.nq,g.onField);
     g.formations=defaultFormations(g.nq,g.formation);
     if(g.goals){ g.goals={}; }
+    clearGameClock(g);
   }
   g.qlen=p.m;
   ui.q=0; ui.selSlot=-1; ui.selPlayer=0;
@@ -1577,6 +2082,8 @@ function archiveGame(){
     if(!confirm("This game is on "+g.date+", after today. Save it as a planned game?\n\nA planned game doesn't count toward season totals until you mark it played (or enter the opponent's score).")){ return; }
   }else if(g.oppGoals===null && !confirm("No opponent score has been entered. Save this game without a result? You can add the score later by reopening the game.")){ return; }
   g.planned=future;
+  endPeriodClock(g);
+  keepAwake(false);
   g.id=S.nextGameId++;
   g.rosterSnapshot=copyRoster(S.roster);
   S.games.push(g);
@@ -1615,6 +2122,160 @@ function delGame(i){
   if(S.games[i].id===ui.editId){ ui.editId=0; }
   S.games.splice(i,1); save(); render();
 }
+/* ---------- seasons ----------
+   "Start a new season" puts the played games away in S.seasons together
+   with the roster and setup as they were. Past seasons are kept for good
+   and are read-only: Stats shows any of them with the same tables and
+   trends as the current season. */
+function findSeason(id){
+  var i, list=(S && S.seasons)||[];
+  for(i=0;i<list.length;i++){ if(list[i].id===id){ return list[i]; } }
+  return null;
+}
+/* run fn with a past season's games, roster and setup in place of the
+   current ones (for reading only) */
+function withSeason(id, fn){
+  var s=id?findSeason(id):null;
+  if(!s){ return fn(); }
+  var keep={games:S.games, roster:S.roster, cfg:S.cfg};
+  S.games=s.games; S.roster=s.roster; S.cfg=s.cfg;
+  try{ return fn(); }
+  finally{ S.games=keep.games; S.roster=keep.roster; S.cfg=keep.cfg; }
+}
+function defaultSeasonName(games){
+  var dates=games.map(function(g){ return g.date||""; }).filter(Boolean).sort();
+  if(!dates.length){ return "Season "+todayISO().slice(0,4); }
+  var m=Number(dates[0].slice(5,7)), y=dates[0].slice(0,4);
+  return (m>=8?"Fall":(m>=6?"Summer":(m>=3?"Spring":"Winter")))+" "+y;
+}
+function makeSeason(name, games, cfg, roster){
+  var dates=games.map(function(g){ return g.date||""; }).filter(Boolean).sort();
+  return {id:S.nextSeasonId++, name:name, from:dates[0]||"", to:dates[dates.length-1]||"", endedAt:todayISO(),
+          cfg:copyValue(cfg), roster:copyRoster(roster), games:copyValue(games)};
+}
+function startNewSeason(){
+  var played=playedGames();
+  if(!played.length){ alert("There are no played games to put away yet."); return; }
+  var name=prompt("Starting a new season puts this season\u2019s "+played.length+" played game"+(played.length===1?"":"s")+
+    " away, with the roster and setup as they are now. You can look back at it any time under Stats.\n\nName for the season that\u2019s ending:",
+    defaultSeasonName(played));
+  if(name===null){ return; }
+  name=name.trim()||defaultSeasonName(played);
+  if(!S.seasons){ S.seasons=[]; }
+  if(!S.nextSeasonId){ S.nextSeasonId=1; }
+  played.forEach(function(g){ endPeriodClock(g); if(!g.rosterSnapshot){ g.rosterSnapshot=copyRoster(S.roster); } });
+  S.seasons.push(makeSeason(name, played, S.cfg, S.roster));
+  /* planned games that haven't been played yet stay for the new season */
+  S.games=S.games.filter(function(g){ return g.planned; });
+  undoStack=[]; ui.editId=0; ui.q=0; ui.season=0; ui.trend={opp:"", off:{}};
+  if(HA){ sync.checkpoint="new season"; }
+  save();
+  showTab("setup");
+  alert(name+" is put away. See it any time on the Stats tab: choose it under Season.\n\n"+
+        "Now get the roster ready for the new season: remove players who aren\u2019t coming back, add new ones, and check positions, tiers and goalkeepers.");
+}
+function pickSeason(v){
+  ui.season=Number(v)||0;
+  ui.trend={opp:"", off:{}};
+  render();
+}
+function renameSeason(){
+  var s=findSeason(ui.season);
+  if(!s){ return; }
+  var v=prompt("Name for this season:", s.name);
+  if(v===null || !v.trim()){ return; }
+  s.name=v.trim();
+  save(); render();
+}
+function deleteSeason(){
+  var s=findSeason(ui.season);
+  if(!s){ return; }
+  if(!confirm("Delete "+s.name+" and its "+s.games.length+" game"+(s.games.length===1?"":"s")+" for good?\n\nDownload a backup first if you might want it later.")){ return; }
+  S.seasons=S.seasons.filter(function(x){ return x!==s; });
+  ui.season=0; ui.trend={opp:"", off:{}};
+  save(); render();
+}
+/* add the seasons in a backup file (its current season and any it had put
+   away) as past seasons, without changing anything else */
+function importSeason(ev){
+  var f=ev.target.files[0]; if(!f){ return; }
+  var r=new FileReader();
+  r.onload=function(){
+    var keep=S, found=[], played=[], d=null, i;
+    try{
+      d=JSON.parse(r.result);
+      if(!d || !d.roster || !d.cfg){ throw new Error("bad"); }
+      normalizeState(d);
+      played=playedGames().map(copyValue);
+      for(i=0;i<d.seasons.length;i++){ found.push(copyValue(d.seasons[i])); }
+    }catch(e){ S=keep; alert("That file isn\u2019t a backup from this tool."); return; }
+    S=keep;
+    var added=[];
+    found.forEach(function(s){
+      var copy=makeSeason(s.name, s.games, s.cfg, s.roster);
+      copy.from=s.from||copy.from; copy.to=s.to||copy.to; copy.endedAt=s.endedAt||copy.endedAt;
+      S.seasons.push(copy); added.push(copy.name);
+    });
+    if(played.length){
+      var name=prompt("Name for the season in this backup ("+played.length+" played game"+(played.length===1?"":"s")+"):", defaultSeasonName(played));
+      if(name!==null){
+        var s=makeSeason(name.trim()||defaultSeasonName(played), played, d.cfg, d.roster);
+        S.seasons.push(s); added.push(s.name); ui.season=s.id;
+      }
+    }
+    if(!added.length){ alert("Nothing was added: that backup has no played games."); render(); return; }
+    ui.trend={opp:"", off:{}};
+    save(); render();
+    alert("Added: "+added.join(", ")+".");
+  };
+  r.readAsText(f);
+  ev.target.value="";
+}
+function zoneLabel(v){
+  var i;
+  for(i=0;i<ZONES.length;i++){ if(ZONES[i].v===v){ return ZONES[i].label; } }
+  return v||"\u2014";
+}
+/* The Season card at the top of Stats: pick this season or a past one. A
+   past one also gets its summary, players, roster and games here. */
+function renderSeasonPick(){
+  var sel=document.getElementById("seasonPick");
+  if(!sel){ return; }
+  if(ui.season && !findSeason(ui.season)){ ui.season=0; }
+  var list=(S.seasons||[]).slice().sort(function(a,b){ return (b.to||"").localeCompare(a.to||"") || b.id-a.id; });
+  var h='<option value="0">This season ('+playedGames().length+' game'+(playedGames().length===1?'':'s')+')</option>';
+  list.forEach(function(s){
+    var rec=withSeason(s.id, seasonRecord);
+    h+='<option value="'+s.id+'"'+(s.id===ui.season?' selected':'')+'>'+esc(s.name)+' ('+rec.wins+'-'+rec.losses+'-'+rec.ties+')</option>';
+  });
+  sel.innerHTML=h;
+  document.getElementById("seasonActions").hidden=!ui.season;
+  var box=document.getElementById("pastSeason");
+  if(!ui.season){ box.innerHTML=''; box.hidden=true; return; }
+  box.hidden=false;
+  box.innerHTML=withSeason(ui.season, function(){
+    var s=findSeason(ui.season), rec=seasonRecord(), games=playedGames(), gf=0, ga=0, out="";
+    games.forEach(function(g){ gf+=teamGoals(g); ga+=g.oppGoals||0; });
+    out+='<p class="trendsum"><b>'+esc(s.name)+'</b>: '+esc(S.cfg.team)+', '+S.cfg.onField+'v'+S.cfg.onField+', '+
+         S.cfg.quarters+' &times; '+S.cfg.minutes+' min. '+(s.from?esc(s.from)+' to '+esc(s.to)+'. ':'')+
+         'Record '+rec.wins+'-'+rec.losses+'-'+rec.ties+' (W-L-T), scored '+gf+', allowed '+ga+'.</p>';
+    out+='<h3 style="margin-top:10px">Players</h3><div class="scrollx">'+seasonTableHTML()+'</div>';
+    out+='<h3 style="margin-top:10px">Roster</h3><div class="scrollx"><table><thead><tr><th>Name</th><th>#</th><th>Primary</th><th>Secondary</th><th>Tier</th></tr></thead><tbody>';
+    S.roster.slice().sort(function(a,b){ return a.name.localeCompare(b.name); }).forEach(function(p){
+      out+='<tr><td>'+esc(p.name)+'</td><td>'+esc(p.num||"")+'</td><td>'+esc(zoneLabel(p.p1))+'</td><td>'+esc(zoneLabel(p.p2))+'</td><td>'+
+           (["Not set","Strong","Middle","Developing"][p.tier||0])+'</td></tr>';
+    });
+    out+='</tbody></table></div>';
+    out+='<h3 style="margin-top:10px">Games</h3><div class="scrollx"><table><thead><tr><th>Date</th><th>Opponent</th><th>Result</th><th class="num">GF</th><th class="num">GA</th><th>Notes</th></tr></thead><tbody>';
+    games.slice().sort(function(a,b){ return (a.date||"").localeCompare(b.date||""); }).forEach(function(g){
+      out+='<tr><td>'+esc(g.date||"")+'</td><td>'+esc(g.opp||"\u2014")+'</td><td>'+(gameResult(g)||"\u2014")+'</td><td class="num">'+teamGoals(g)+'</td><td class="num">'+
+           (g.oppGoals===null?"\u2014":g.oppGoals)+'</td><td class="gnote">'+esc(g.notes||"").replace(/\n/g,"<br>")+'</td></tr>';
+    });
+    out+='</tbody></table></div><p class="hint">Trends and Positions played below are for '+esc(s.name)+' too. Use the Trends section\u2019s "A closer look" to see each game\u2019s lineups.</p>';
+    return out;
+  });
+}
+
 function resetSeason(){
   if(!confirm("Delete every saved game? The roster stays.")){ return; }
   S.games=[]; undoStack=[]; ui.editId=0; save(); render();
@@ -1658,6 +2319,7 @@ function editPlayer(id,field,val){
   save(); render();
 }
 function saveCfg(){
+  var oldMinutes=S.cfg.minutes;
   S.cfg.team=document.getElementById("cfgTeam").value.trim()||"Team";
   S.cfg.quarters=Math.max(2,Math.min(4,Number(document.getElementById("cfgQ").value)||4));
   S.cfg.minutes=Math.max(5,Math.min(45,Number(document.getElementById("cfgMin").value)||15));
@@ -1667,8 +2329,10 @@ function saveCfg(){
     g.nq=S.cfg.quarters;
     g.plan=blankPlan(g.nq,g.onField);
     g.formations=defaultFormations(g.nq,g.formation);
+    clearGameClock(g);
   }
-  g.qlen=S.cfg.minutes;
+  /* a length set for this game only stays */
+  if(g.qlen===oldMinutes){ g.qlen=S.cfg.minutes; }
   if(ui.q>lastQ()){ ui.q=lastQ(); }
   save(); render();
 }
@@ -1807,7 +2471,7 @@ function render(){
   document.getElementById("brandTop").textContent=S.cfg.team;
   document.getElementById("brandSub").textContent=S.cfg.onField+"v"+S.cfg.onField+" \u00b7 "+S.roster.length+" players";
   haRenderChrome();
-  renderPlan(); renderSeason(); renderSetup(); renderPrint();
+  renderPlan(); renderLive(); renderSeason(); renderSeasonPick(); renderSetup(); renderPrint();
   renderUndoButtons(); renderBackupStatus();
 }
 
@@ -1890,7 +2554,7 @@ function renderPlan(){
   document.getElementById("oppQRow").innerHTML=
     '<span><b>'+esc(g.opp||"Opponent")+'</b> goals in '+PW(g).s+(ui.q+1)+':</span> '+
     '<button class="btn sm quiet" onclick="bumpOppGoal('+ui.q+',-1)" aria-label="One fewer opponent goal">\u2212</button> '+
-    '<b class="oppq" id="oppQValue">'+(byPeriod?oppGoalsIn(g,ui.q):"\u2014")+'</b> '+
+    '<b class="oppq" id="oppQValue">'+(oppGoalsIn(g,ui.q)===null?"\u2014":oppGoalsIn(g,ui.q))+'</b> '+
     '<button class="btn sm" onclick="bumpOppGoal('+ui.q+',1)" aria-label="One more opponent goal">+</button>'+
     (byPeriod?' <button class="btn sm quiet" onclick="clearOppByPeriod()">Use a total instead</button>'
              :' <span class="hint" style="margin:0">Record them by '+PW(g).low+' to see when goals are allowed (Stats, Trends).</span>');
@@ -1943,7 +2607,7 @@ function renderPlan(){
   }
   document.getElementById("qtabs").innerHTML=h;
 
-  document.getElementById("pitchTitle").textContent=PW(g).one+" "+(ui.q+1);
+  document.getElementById("pitchTitle").textContent=PW(g).one+" "+(ui.q+1)+(subsIn(g,ui.q).length||pendingPlanned(g,ui.q).length?" \u2014 starting lineup":"");
   document.getElementById("allFormBtn").textContent="All "+PW(g).lows;
   document.getElementById("allFormBtn").title="Use this "+PW(g).low+"'s formation for every "+PW(g).low;
   document.getElementById("playedTitle").textContent=PW(g).many+" played";
@@ -2077,7 +2741,7 @@ function renderPlan(){
     ". Tap + on the "+PW(g).low+" tab you are viewing.";
 
   var carry=seasonTotals(), tq=targetQtrs();
-  var qc=gameQtrs(g);
+  var qc=gameQtrs(g,true);
   var rows=presentRoster(g).map(function(p){
     return {p:p, plays:qc[p.id]||0, avail:availableQuarters(g,p.id), seasonSatQ:carry[p.id]?carry[p.id].satQ:0};
   }).sort(function(a,b){ return a.plays-b.plays || b.seasonSatQ-a.seasonSatQ; });
@@ -2090,12 +2754,12 @@ function renderPlan(){
     var cls=rows[i].plays<tq-0.5?"short":(rows[i].plays>tq+0.5?"over":"");
     if(rows[i].avail<Q){ cls=""; }   /* left the game: not short of time */
     h+='<tr class="'+cls+'"><td>'+esc(rows[i].p.name)+(rows[i].avail<Q?' <span class="hint" style="margin:0">(left from '+PW(g).s+(rows[i].avail+1)+')</span>':'')+
-       '</td><td class="num" style="text-align:center">'+rows[i].plays+
-       '</td><td class="num" style="text-align:center">'+Math.max(0,rows[i].avail-rows[i].plays)+
-       '</td><td class="num" style="text-align:center">'+rows[i].seasonSatQ+'</td></tr>';
+       '</td><td class="num" style="text-align:center">'+fmtQ(rows[i].plays)+
+       '</td><td class="num" style="text-align:center">'+fmtQ(Math.max(0,rows[i].avail-rows[i].plays))+
+       '</td><td class="num" style="text-align:center">'+fmtQ(rows[i].seasonSatQ)+'</td></tr>';
   }
   h+='</tbody></table>';
-  h+='<p class="hint">'+PW(g).many+' for the lineups as they stand now. Change a '+PW(g).low+' and these update.</p>';
+  h+='<p class="hint">'+PW(g).many+' for the lineups as they stand now, counting subs made and planned (part of a '+PW(g).low+' for coming on or going off partway). Change a '+PW(g).low+' and these update.</p>';
   document.getElementById("planSits").innerHTML=h;
 }
 
@@ -2129,14 +2793,13 @@ function positionStats(){
   for(gi=0;gi<games.length;gi++){
     g=games[gi];
     for(q=0;q<g.nq;q++){
-      f=qForm(g,q); row=g.plan[q]||[];
-      for(i=0;i<row.length && i<f.pos.length;i++){
-        id=row[i];
-        if(!id || !stats[id]){ continue; }
-        line=lineOfZone(f.pos[i].z);
-        stats[id][line]++;
-        stats[id].goals[line]+=goalsOf(g,id,q);
-      }
+      f=qForm(g,q);
+      periodAppearances(g,q).forEach(function(ap){
+        if(!stats[ap.id] || !f.pos[ap.slot]){ return; }
+        line=lineOfZone(f.pos[ap.slot].z);
+        stats[ap.id][line]++;
+        stats[ap.id].goals[line]+=goalsOf(g,ap.id,q);
+      });
     }
   }
   for(k in stats){
@@ -2157,7 +2820,8 @@ function positionNote(p, st){
   }
   return notes.join("; ");
 }
-function renderPositionStats(){
+function renderPositionStats(){ withSeason(ui.season, renderPositionStatsNow); }
+function renderPositionStatsNow(){
   var box=document.getElementById("positionStats");
   if(!box){ return; }
   var st=positionStats(), players=S.roster.slice().sort(function(x,y){ return x.name.localeCompare(y.name); }), i, p, s, h;
@@ -2201,7 +2865,7 @@ function setTrendGame(id, on){
 function setTrendAll(on){
   ui.trend=ui.trend||{opp:"", off:{}};
   ui.trend.off={};
-  if(!on){ playedGames().forEach(function(g){ ui.trend.off[g.id]=true; }); }
+  if(!on){ withSeason(ui.season, function(){ playedGames().forEach(function(g){ ui.trend.off[g.id]=true; }); }); }
   renderTrends();
 }
 function teamGoalsIn(g, q){
@@ -2219,7 +2883,7 @@ function computeTrends(games){
   for(q=0;q<nq;q++){ t.periods.push({gf:0, ga:0}); }
   for(i=0;i<games.length;i++){
     g=games[i];
-    var r=gameResult(g), hasQ=Array.isArray(g.oppGoalsQ);
+    var r=gameResult(g), hasQ=oppByPeriod(g);
     if(r==="W"){ t.rec.w++; } else if(r==="L"){ t.rec.l++; } else if(r==="T"){ t.rec.t++; }
     t.gf+=teamGoals(g);
     if(g.oppGoals!==null && g.oppGoals!==undefined){ t.ga+=Number(g.oppGoals)||0; t.gaGames++; }
@@ -2233,15 +2897,15 @@ function computeTrends(games){
         t.periods[q].gf+=gfq;
         if(gaq!==null){ t.periods[q].ga+=gaq; }
       }
-      f=qForm(g,q); row=g.plan[q]||[];
-      var fn=qFormName(g,q);
+      f=qForm(g,q);
+      var fn=qFormName(g,q), apps=periodAppearances(g,q);
       var fs=t.forms[fn]=t.forms[fn]||{periods:0, gf:0, ga:0, gaPeriods:0};
       fs.periods++; fs.gf+=gfq;
       if(gaq!==null){ fs.ga+=gaq; fs.gaPeriods++; }
-      for(j=0;j<row.length && j<f.pos.length;j++){
-        id=row[j];
-        if(!id){ continue; }
-        if(f.pos[j].z==="G"){
+      for(j=0;j<apps.length;j++){
+        id=apps[j].id;
+        if(!f.pos[apps[j].slot]){ continue; }
+        if(f.pos[apps[j].slot].z==="G"){
           var ks=t.keepers[id]=t.keepers[id]||{name:nameOf(id,g), periods:0, ga:0, gaPeriods:0};
           ks.periods++;
           if(gaq!==null){ ks.ga+=gaq; ks.gaPeriods++; }
@@ -2321,8 +2985,8 @@ function computeQuarterLook(games, q, nq){
   function add(s, gf, ga){ s.n++; s.gf+=gf; if(ga!==null){ s.ga+=ga; s.gaN++; } }
   games.forEach(function(g){
     if(g.nq!==nq){ return; }
-    var gfq=teamGoalsIn(g,q), gaq=oppGoalsIn(g,q), f=qForm(g,q), row=g.plan[q]||[], prev=q>0?(g.plan[q-1]||[]):null;
-    var on={}, keeper=0, outfield=0, stayed=0, bench=[], i, j, id;
+    var gfq=teamGoalsIn(g,q), gaq=oppGoalsIn(g,q), f=qForm(g,q), prev=q>0?lineupAt(g,q-1):null;
+    var on={}, keeper=0, outfield=0, stayed=0, bench=[], i, j, id, apps=periodAppearances(g,q);
     for(i=0;i<g.nq;i++){
       if(i===q){ continue; }
       var o=oppGoalsIn(g,i);
@@ -2333,11 +2997,12 @@ function computeQuarterLook(games, q, nq){
     if(gaq!==null){ L.ga+=gaq; L.gaGames++; }
     var fn=qFormName(g,q);
     add(L.forms[fn]=L.forms[fn]||stat(), gfq, gaq);
-    for(j=0;j<row.length && j<f.pos.length && j<g.onField;j++){
-      id=row[j];
-      if(!id){ continue; }
-      on[id]=f.pos[j].z==="G"?"G":lineGroup(f.pos[j].z);
-      if(on[id]==="G"){ keeper=id; continue; }
+    for(j=0;j<apps.length;j++){
+      id=apps[j].id;
+      if(!f.pos[apps[j].slot]){ continue; }
+      on[id]=f.pos[apps[j].slot].z==="G"?"G":lineGroup(f.pos[apps[j].slot].z);
+      if(on[id]==="G"){ if(!keeper){ keeper=id; } continue; }
+      if((g.plan[q]||[]).indexOf(id)<0){ continue; }   /* came on as a sub */
       outfield++;
       if(prev && prev.indexOf(id)>=0){ stayed++; }
     }
@@ -2356,7 +3021,8 @@ function computeQuarterLook(games, q, nq){
       bucket.n++; bucket.ga+=gaq;
     }
     L.games.push({g:g, form:fn, keeper:keeper?nameOf(keeper,g):"", gf:gfq, ga:gaq,
-                  lines:lineupByLine(g,q), bench:bench, stayed:stayed, outfield:outfield, hasPrev:!!prev});
+                  lines:lineupByLine(g,q), bench:bench, stayed:stayed, outfield:outfield, hasPrev:!!prev,
+                  subs:subsIn(g,q).map(function(s){ return fmtClock(s.t)+' '+nameOf(s.on,g)+' for '+nameOf(s.off,g); })});
   });
   L.games.sort(function(x,y){ return (x.g.date||"").localeCompare(y.g.date||""); });
   return L;
@@ -2379,7 +3045,7 @@ function renderQuarterLook(games, t){
      (L.otherGaPeriods?', '+rate(L.otherGa,L.otherGaPeriods)+' allowed':'')+' a game each.</p>';
 
   /* game by game */
-  h+='<h4>Game by game</h4><div class="qgames">';
+  h+='<h4>Game by game</h4><p class="hint">Starting lineups; subs during the '+pw.low+' are listed under them.</p><div class="qgames">';
   L.games.forEach(function(x){
     var names=function(list){
       return list.map(function(s){ return '<span class="qpos">'+esc(s.k)+'</span> '+(s.id?esc(nameOf(s.id,x.g)):'<i>open</i>'); }).join(', ');
@@ -2389,10 +3055,11 @@ function renderQuarterLook(games, t){
        (x.keeper?'<span>GK '+esc(x.keeper)+'</span>':'')+
        '<span>'+lbl+': us '+x.gf+', them '+(x.ga===null?'?':x.ga)+'</span>'+
        (x.hasPrev&&x.outfield?'<span>'+x.stayed+' of '+x.outfield+' also played '+prevLbl+'</span>':'')+
-       '<button class="btn sm quiet" onclick="openGameAt('+x.g.id+','+q+')">Open</button></div>';
+       (ui.season?'':'<button class="btn sm quiet" onclick="openGameAt('+x.g.id+','+q+')">Open</button>')+'</div>';
     [['D','Defense'],['M','Midfield'],['F','Forwards']].forEach(function(z){
       if(x.lines[z[0]].length){ h+='<div class="qline"><span class="qz">'+z[1]+'</span> '+names(x.lines[z[0]])+'</div>'; }
     });
+    if(x.subs.length){ h+='<div class="qline"><span class="qz">Subs</span> '+esc(x.subs.join(", "))+'</div>'; }
     if(x.bench.length){ h+='<div class="qline"><span class="qz">Bench</span> '+esc(x.bench.join(", "))+'</div>'; }
     h+='</div>';
   });
@@ -2448,7 +3115,8 @@ function renderQuarterLook(games, t){
      'matter too \u2014 use this to decide what to watch for, not to judge a player.</p>';
   return h;
 }
-function renderTrends(){
+function renderTrends(){ withSeason(ui.season, renderTrendsNow); }
+function renderTrendsNow(){
   var box=document.getElementById("trends");
   if(!box){ return; }
   ui.trend=ui.trend||{opp:"", off:{}};
@@ -2539,6 +3207,12 @@ function renderSeason(){
     (plannedCount?", "+plannedCount+" of them planned and not counted yet":"")+". "+
     (record.unknown?record.unknown+" saved game"+(record.unknown===1?" has":"s have")+" no opponent score and "+(record.unknown===1?"is":"are")+" excluded from the record. ":"")+
     "Sorted by smallest share of available "+seasonWords().lows+" played \u2014 missed games are excluded from the comparison.";
+  document.getElementById("seasonTable").innerHTML=seasonTableHTML();
+  renderGameList();
+}
+/* players' season totals, for whichever season is in place */
+function seasonTableHTML(){
+  var t=seasonTotals(), i, h="";
   var active={}, currentIndex;
   for(currentIndex=0;currentIndex<S.roster.length;currentIndex++){ active[S.roster[currentIndex].id]=true; }
   var rows=seasonPlayers().map(function(p){
@@ -2558,15 +3232,17 @@ function renderSeason(){
     var d=(rows[i].playRate-avgRate)*(rows[i].availQ||0), cls="";
     if(d<-1){ cls="short"; } else if(d>1){ cls="over"; }
     h+='<tr class="'+cls+'"><td>'+esc(rows[i].p.name)+(rows[i].active?'':' <span class="hint" style="margin:0">(former)</span>')+'</td><td class="num">'+rows[i].games+
-       '</td><td class="num">'+rows[i].qtrs+'</td><td class="num">'+rows[i].satQ+
+       '</td><td class="num">'+fmtQ(rows[i].qtrs)+'</td><td class="num">'+fmtQ(rows[i].satQ)+
        '</td><td class="num">'+(rows[i].missed||"")+
        '</td><td class="num">'+(d>=0?"+":"")+d.toFixed(1)+
        '</td><td class="num" style="font-weight:800">'+rows[i].goals+
        '</td><td class="num">'+rows[i].mins+'</td></tr>';
   }
   h+='</tbody></table>';
-  document.getElementById("seasonTable").innerHTML=h;
-
+  return h;
+}
+function renderGameList(){
+  var h="", i;
   if(!S.games.length){
     h='<p class="hint">No games saved yet.</p>';
   }else{
@@ -2665,7 +3341,7 @@ function renderPrint(){
   }
 
   function sitDock(){
-    var totals=gameQtrs(g), d='', i;
+    var totals=gameQtrs(g,true), d='', i;
     var summaryRoster=gameRoster(g).slice().sort(function(a,b){
       var sa=availableQuarters(g,a.id)-(totals[a.id]||0), sb=availableQuarters(g,b.id)-(totals[b.id]||0);
       return sa-sb || a.name.localeCompare(b.name);
@@ -2675,8 +3351,8 @@ function renderPrint(){
       var player=summaryRoster[i];
       d+='<tr><td>'+esc(player.name)+'</td>';
       if(isOut(g,player.id)){ d+='<td class="outmark">OUT</td>'; }
-      else if(leftFrom(g,player.id)>=0){ d+='<td class="num">'+Math.max(0,availableQuarters(g,player.id)-(totals[player.id]||0))+' &middot; left '+PW(g).s+(leftFrom(g,player.id)+1)+'</td>'; }
-      else { d+='<td class="num">'+(Q-(totals[player.id]||0))+'</td>'; }
+      else if(leftFrom(g,player.id)>=0){ d+='<td class="num">'+fmtQ(Math.max(0,availableQuarters(g,player.id)-(totals[player.id]||0)))+' &middot; left '+PW(g).s+(leftFrom(g,player.id)+1)+'</td>'; }
+      else { d+='<td class="num">'+fmtQ(Q-(totals[player.id]||0))+'</td>'; }
       d+='</tr>';
     }
     d+='</tbody></table><div class="psummary-note">Fewest sits first. Use this if you need to change the lineup on the day. Players marked OUT are excluded.</div></aside>';
@@ -2689,6 +3365,7 @@ function renderPrint(){
        '<div class="psit"><b>Sitting this '+PW(g).low+':</b> '+
        esc(presentInQ(g,q).filter(function(p){return g.plan[q].indexOf(p.id)<0;}).map(function(p){return p.name;}).join(", ")||"\u2014")+
        '</div>'+(shortInfo(g,q).by>0?'<div class="psit"><b>Playing '+shortInfo(g,q).by+' short:</b> '+esc(shortInfo(g,q).open.join(", ")||"\u2014")+' open</div>':'')+
+       (subsFor(g,q,true).length?'<div class="psit"><b>Subs:</b> '+esc(subsFor(g,q,true).map(function(s){ return fmtClock(s.t)+' '+nameOf(s.on,g)+' for '+nameOf(s.off,g); }).join(", "))+'</div>':'')+
        '<div class="psit"><b>'+PW(g).s+(q+1)+' goals:</b> us ____ &nbsp; them ____</div></div>'+
        '<div class="pside">'+sitDock()+notesBlock()+'</div></div></section>';
   }
@@ -2933,7 +3610,8 @@ function haRenderHistory(){
   if(btn){ btn.hidden=true; }
   if(!ui.haHistory.length){ box.innerHTML='<p class="hint">No earlier versions yet.</p>'; return; }
   var reasons={"kept this device":"replaced by another device's version","before restore":"before a restore",
-               "import":"before a backup file was restored","not kept":"a device's changes that weren't kept"};
+               "import":"before a backup file was restored","not kept":"a device's changes that weren't kept",
+               "new season":"before a new season was started"};
   var h="", i, v;
   for(i=0;i<ui.haHistory.length;i++){
     v=ui.haHistory[i];
@@ -2959,5 +3637,6 @@ function haRestore(versionId){
 
 load();
 render();
+keepAwake(true);   /* a clock left running: keep the screen on (needs a tap on some phones) */
 setupOffline();
 if(HA){ haStart(); }

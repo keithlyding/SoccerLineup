@@ -77,7 +77,7 @@
         ":host{display:block;height:100vh;height:100dvh;box-sizing:border-box;background:#13201B;" +
         "padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)}" +
         "iframe{display:block;border:0;width:100%;height:100%;background:#FBFAF6}" +
-        "</style><iframe title=\"Soccer Lineup\"></iframe>";
+        "</style><iframe title=\"Soccer Lineup\" allow=\"screen-wake-lock\"></iframe>";
       root.querySelector("iframe").src = (this._panel.config && this._panel.config.app_url) || "/soccerlineup_app?ha=1";
     }
   }

@@ -120,6 +120,22 @@ async def test_stale_save_is_a_conflict_and_force_keeps_the_other_version(hass: 
     assert versions[0]["rev"] == 2 and versions[0]["reason"] == "kept this device", versions
 
 
+async def test_starting_a_new_season_keeps_the_old_one_as_a_version(hass: HomeAssistant, hass_ws_client):
+    await setup(hass)
+    ws = await hass_ws_client(hass)
+    await ws.send_json_auto_id({"type": "soccerlineup/save", "data": season("Fall"), "base_rev": 0})
+    assert (await ws.receive_json())["result"]["rev"] == 1
+    # an ordinary edit soon after isn't kept as a version on its own
+    await ws.send_json_auto_id({"type": "soccerlineup/save", "data": season("Fall edited"), "base_rev": 1})
+    assert (await ws.receive_json())["result"]["rev"] == 2
+    await ws.send_json_auto_id({"type": "soccerlineup/save", "data": season("Spring"), "base_rev": 2, "checkpoint": "new season"})
+    res = await ws.receive_json()
+    assert res["success"] and res["result"]["rev"] == 3, res
+    await ws.send_json_auto_id({"type": "soccerlineup/history"})
+    versions = (await ws.receive_json())["result"]["versions"]
+    assert versions[0]["rev"] == 2 and versions[0]["reason"] == "new season", versions
+
+
 async def test_bad_data_is_refused(hass: HomeAssistant, hass_ws_client):
     await setup(hass)
     ws = await hass_ws_client(hass)
