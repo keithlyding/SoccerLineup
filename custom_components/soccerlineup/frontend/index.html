@@ -35,6 +35,7 @@
   <span>A new version of the app is ready.</span>
   <button class="btn sm green" onclick="location.reload()">Reload</button>
 </div>
+<div class="sheet" id="subPicker" role="dialog" aria-label="Choose the sub" hidden></div>
 <div id="printSheet"></div>
 
 <main>
@@ -48,6 +49,12 @@
         <input id="fOpp" placeholder="Wolfe" onchange="setGameField('opp',this.value)"></label>
       <label class="field">Date
         <input type="date" id="fDate" onchange="setGameField('date',this.value)"></label>
+      <label class="field">Game type
+        <select id="fKind" onchange="setGameKind(this.value)">
+          <option value="">League</option>
+          <option value="playoff">Playoff / tournament</option>
+          <option value="scrimmage">Scrimmage</option>
+        </select></label>
     </div>
     <p class="hint" id="gameStatus"></p>
     <h3 style="margin-top:10px">Who is here today -- click on players to mark absent</h3>
@@ -64,7 +71,7 @@
 
   <div class="qtabs" id="qtabs"></div>
 
-  <div class="card" id="liveCard"></div>
+  <div class="card" id="clockCard"></div>
 
   <div class="card">
     <div class="row spread" style="margin-bottom:8px">
@@ -72,11 +79,13 @@
       <div class="row">
         <select id="qFormation" class="qform" aria-label="Formation for this part of the game" onchange="setQuarterFormation(this.value)"></select>
         <button class="btn sm quiet" id="allFormBtn" onclick="useFormationForAllQuarters()" title="Use this formation for the whole game" hidden>All quarters</button>
-        <button class="btn sm green" onclick="autoFillQuarter()">Auto-fill</button>
-        <button class="btn sm quiet" onclick="clearQuarter()">Clear</button>
+        <button class="btn sm green" id="qAutoBtn" onclick="autoFillQuarter()">Auto-fill</button>
+        <button class="btn sm quiet" id="qClearBtn" onclick="clearQuarter()">Clear</button>
         <button class="btn sm quiet undoBtn" onclick="undoLastChange()" disabled>Undo</button>
       </div>
     </div>
+    <p class="hint livehint" id="liveHint" hidden></p>
+    <div class="row stagedrow" id="stagedRow" hidden></div>
     <div class="row" id="shortRow" style="margin-bottom:8px" hidden>
       <span class="warn" style="margin:0" id="shortText"></span>
       <label class="hint" style="margin:0">Leave open <select id="shortSpot" class="qform" aria-label="Spot to leave open" onchange="setOpenSpot(this.value)"></select></label>
@@ -107,6 +116,8 @@
     <p class="warn" id="planWarn"></p>
 
   </div>
+
+  <div class="card" id="subsCard"></div>
 
   <div class="card">
     <div class="row spread">
@@ -189,12 +200,17 @@
       <label class="field">Season<select id="seasonPick" onchange="pickSeason(this.value)"></select></label>
       <div class="row" id="seasonActions" hidden>
         <button class="btn sm quiet" onclick="renameSeason()">Rename</button>
+        <button class="btn sm quiet" onclick="setSeasonCoach()">Head coach</button>
         <button class="btn sm quiet" onclick="deleteSeason()">Delete</button>
       </div>
     </div>
     <div id="pastSeason" hidden></div>
     <p class="hint" style="margin-top:8px">Have a backup from an earlier season? <button class="btn sm quiet" onclick="document.getElementById('seasonFile').click()">Add it as a past season</button>
       <input type="file" id="seasonFile" accept=".json,application/json,text/plain" hidden onchange="importSeason(event)"></p>
+  </div>
+  <div class="card">
+    <h2>Head coach records</h2>
+    <div id="coachRecords"></div>
   </div>
   <div class="card">
     <h2>Trends</h2>
@@ -219,6 +235,7 @@
     </div>
     <div class="row" style="margin-top:6px">
       <label class="field">Team<input id="cfgTeam" onchange="saveCfg()"></label>
+      <label class="field">Head coach<input id="cfgCoach" placeholder="Your name" onchange="saveCfg()"></label>
       <label class="field">Players on field<select id="cfgSize" onchange="setFieldSize(this.value)"></select></label>
       <label class="field">Default formation<select id="cfgFormation" onchange="setDefaultFormation(this.value)"></select></label>
       <label class="field">Periods<input type="number" id="cfgQ" min="2" max="4" onchange="saveCfg()" title="2 for halves, 4 for quarters"></label>

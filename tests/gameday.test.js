@@ -27,6 +27,8 @@ function assert(cond, msg) {
   await page.goto(server.app);
   await page.evaluate(() => localStorage.clear());
   await page.reload();
+  // time moves only when the test moves it
+  await page.clock.pauseAt(new Date('2026-11-07T09:01:00'));
   const press = sel => setup.iphone ? page.tap(sel) : page.click(sel);
 
   await page.evaluate(() => {
@@ -42,12 +44,12 @@ function assert(cond, msg) {
   assert(await page.inputValue('#fQlen') === '15', 'the game\'s minutes per quarter start from Setup (15)');
   await page.fill('#fQlen', '12'); await page.press('#fQlen', 'Tab');
   await page.evaluate(() => { showTab('setup'); document.getElementById('cfgTeam').value = 'Panthers FC'; saveCfg(); showTab('plan'); });
-  let st = await page.evaluate(() => ({ qlen: S.current.qlen, cfg: S.cfg.minutes, left: document.getElementById('clockLeft') ? 1 : 0, shown: document.querySelector('#liveCard .clockrow').textContent }));
+  let st = await page.evaluate(() => ({ qlen: S.current.qlen, cfg: S.cfg.minutes, left: document.getElementById('clockLeft') ? 1 : 0, shown: document.querySelector('#clockCard .clockrow').textContent }));
   assert(st.qlen === 12 && st.cfg === 15 && /12:00 left/.test(st.shown), 'a different length for this game only (12 min) stays when Setup is edited: ' + st.shown);
   await page.fill('#fQlen', '15'); await page.press('#fQlen', 'Tab');
 
   // ---------- the clock ----------
-  await press('#liveCard button:has-text("Start Q1")');
+  await press('#clockCard button:has-text("Start Q1")');
   await page.clock.fastForward('03:00');
   st = await page.evaluate(() => ({ time: document.getElementById('clockTime').textContent, left: document.getElementById('clockLeft').textContent, running: clockRunning(S.current) }));
   assert(st.running && st.time === '3:00' && st.left === '12:00 left', 'Start Q1 runs the clock: 3:00, 12:00 left');
@@ -55,40 +57,92 @@ function assert(cond, msg) {
   // a goal while the clock runs keeps its time
   const scorer = await page.evaluate(() => { const g = S.current, f = qForm(g, 0); return g.plan[0][f.pos.findIndex(p => p.z === 'F')]; });
   await page.evaluate(id => bumpGoal(id, 0, 1), scorer);
-  st = await page.evaluate(() => ({ times: S.current.goalTimes, line: document.querySelector('#liveCard .timeline').textContent }));
+  st = await page.evaluate(() => ({ times: S.current.goalTimes, line: document.querySelector('#subsCard .timeline').textContent }));
   assert(st.times.length === 1 && st.times[0].t === 180 && /3:00\s*⚽/.test(st.line), 'a goal entered at 3:00 shows in the timeline with its time');
 
-  // a sub: tap a field player, then a bench player
-  const chips = () => page.evaluate(() => ({ field: Array.from(document.querySelectorAll('#liveCard .livefield button')).map(b => [b.querySelector('.n').textContent, b.lastChild.textContent]), bench: Array.from(document.querySelectorAll('#liveCard .livebench button')).map(b => b.textContent) }));
-  const before = await chips();
-  await press('#liveCard .livefield button:nth-child(2)');
-  assert(/now tap who comes on/.test(await page.textContent('#liveCard')), 'choosing a field player asks for who comes on');
-  await press('#liveCard .livebench button:nth-child(1)');
-  st = await page.evaluate(() => ({ subs: S.current.subs, line: document.querySelector('#liveCard .timeline').textContent }));
-  const after = await chips(), offName = before.field[1][1], onName = before.bench[0];
-  assert(st.subs.length === 1 && st.subs[0].t === 180 && st.subs[0].q === 0, 'the sub is kept at 3:00 in Q1');
-  assert(after.field[1][0] === before.field[1][0] && after.field[1][1] === onName && new RegExp(onName + ' on for ' + offName).test(st.line),
-    'the player coming on takes the same spot, and the timeline says "' + onName + ' on for ' + offName + '"');
+  // the pitch goes live: a sub is a drag from the bench onto a spot
+  st = await page.evaluate(() => ({ title: document.getElementById('pitchTitle').textContent, hint: !document.getElementById('liveHint').hidden, bench: document.getElementById('benchHdr').textContent }));
+  assert(/LIVE 3:00/.test(st.title) && st.hint && /drag onto the field to sub/.test(st.bench), 'while the clock runs, the pitch shows LIVE with the time and says to drag from the bench: ' + st.title);
+  const benchChip = () => page.locator('#benchStrip .chip, #benchLeft .chip, #benchRight .chip').filter({ visible: true }).first();
+  async function dragTo(from, to) {
+    await page.locator('#pitchSvg').scrollIntoViewIfNeeded();
+    const a = await from.boundingBox(), b = await to.boundingBox();
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(a.x + a.width / 2 + 5, a.y + a.height / 2 + 5, { steps: 2 });
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 8 });
+    await page.mouse.up();
+  }
+  const target = await page.evaluate(() => { const g = S.current, row = lineupAt(g, 0), f = qForm(g, 0), slot = row.findIndex((id, k) => id && f.pos[k].z !== 'G' && k > 0);
+    return { slot, off: row[slot], offName: nameOf(row[slot], g), spot: f.pos[slot].k, start: g.plan[0].slice() }; });
+  const onId = Number((await benchChip().getAttribute('onpointerdown')).match(/startDrag\(event,(\d+)/)[1]);
+  const onName = await page.evaluate(id => nameOf(id, S.current), onId);
+  await dragTo(benchChip(), page.locator('#pitchSvg rect[data-slot="' + target.slot + '"]'));
+  st = await page.evaluate(() => ({ subs: S.current.subs, plan: S.current.plan[0].slice(), line: document.querySelector('#subsCard .timeline').textContent,
+    shown: Array.from(document.querySelectorAll('#pitchSvg .slotname')).map(t => t.textContent) }));
+  const offName = target.offName;
+  assert(st.subs.length === 1 && st.subs[0].t === 180 && st.subs[0].q === 0 && st.subs[0].off === target.off && st.subs[0].on === onId,
+    'dragging ' + onName + ' onto ' + target.spot + ' subs them in for ' + offName + ' at 3:00, no list needed: ' + JSON.stringify(st.subs));
+  assert(st.shown[target.slot].endsWith(onName) && JSON.stringify(st.plan) === JSON.stringify(target.start) && new RegExp(onName + ' on for ' + offName).test(st.line),
+    'the live pitch shows ' + onName + ' at ' + target.spot + ', the starting lineup is unchanged, and the timeline says "' + onName + ' on for ' + offName + '"');
+  // a position switch: drag one field player onto another spot
+  const sw = await page.evaluate(() => { const g = S.current, row = lineupAt(g, 0), f = qForm(g, 0), ks = row.map((id, k) => k).filter(k => row[k] && f.pos[k].z !== 'G');
+    return { a: ks[0], b: ks[ks.length - 1], ida: row[ks[0]], idb: row[ks[ks.length - 1]] }; });
+  await dragTo(page.locator('#pitchSvg rect[data-slot="' + sw.a + '"]'), page.locator('#pitchSvg rect[data-slot="' + sw.b + '"]'));
+  st = await page.evaluate(() => ({ row: lineupAt(S.current, 0), last: S.current.subs[S.current.subs.length - 1], secs: periodSeconds(S.current, 0, false, 180) }));
+  assert(st.row[sw.b] === sw.ida && st.row[sw.a] === sw.idb && st.last.move, 'dragging between spots switches the two players\' positions (kept with the time)');
+  await page.evaluate(() => undoLastChange());
+  assert(await page.evaluate(() => S.current.subs.length) === 1, 'Undo takes the position switch back');
+  // get subs ready, then send them in together
+  const tapEl = loc => setup.iphone ? loc.tap() : loc.click();
+  const fieldTap = await page.evaluate(() => { const g = S.current, row = lineupAt(g, 0), f = qForm(g, 0); const k = row.findIndex((id, j) => id && f.pos[j].z !== 'G' && j > 2); return { slot: k, id: row[k], name: nameOf(row[k], g), spot: f.pos[k].k }; });
+  await page.locator('#pitchSvg').scrollIntoViewIfNeeded();
+  await tapEl(page.locator('#pitchSvg rect[data-slot="' + fieldTap.slot + '"]'));
+  st = await page.evaluate(() => ({ open: !document.getElementById('subPicker').hidden, title: document.querySelector('#subPicker h3').textContent, names: Array.from(document.querySelectorAll('#subPicker .pickgrid .btn')).map(b => b.textContent) }));
+  const benchNames = await page.evaluate(() => presentInQ(S.current, 0).filter(p => lineupAt(S.current, 0).indexOf(p.id) < 0).map(p => p.name).sort());
+  assert(st.open && st.title === 'Who goes in for ' + fieldTap.name + ' (' + fieldTap.spot + ')?' && st.names.slice().sort().join() === benchNames.join(),
+    'tapping ' + fieldTap.name + ' on the live pitch lists the bench to choose who goes in: ' + st.names.join(', '));
+  await tapEl(page.locator('#subPicker .pickgrid .btn').first());
+  const inFirst = st.names[0];
+  st = await page.evaluate(() => ({ staged: S.current.staged.length, subs: S.current.subs.length, row: document.getElementById('stagedRow').textContent, picker: document.getElementById('subPicker').hidden, marked: document.querySelectorAll('#pitchSvg .slotbox.staged').length }));
+  assert(st.staged === 1 && st.subs === 1 && st.picker && st.marked === 1 && new RegExp('Ready:.*' + inFirst + ' for ' + fieldTap.name).test(st.row),
+    'choosing ' + inFirst + ' gets that sub ready without making it yet, and marks ' + fieldTap.name + ' on the pitch');
+  // the other way round: tap a bench player, then who comes out
+  await tapEl(page.locator('#benchStrip .chip:not(.staged), #benchLeft .chip:not(.staged), #benchRight .chip:not(.staged)').filter({ visible: true }).first());
+  st = await page.evaluate(() => ({ title: document.querySelector('#subPicker h3').textContent, n: document.querySelectorAll('#subPicker .pickgrid .btn').length }));
+  assert(/^Who comes out for /.test(st.title) && st.n === 8, 'tapping a bench player lists the field (minus the player already coming out) to choose who comes out: ' + st.title);
+  await tapEl(page.locator('#subPicker .pickgrid .btn').nth(2));
+  assert(await page.evaluate(() => S.current.staged.length) === 2 && /Send 2 subs in/.test(await page.textContent('#stagedRow')), 'two subs ready: the button says "Send 2 subs in"');
+  const readyPairs = await page.evaluate(() => S.current.staged.map(s => s.off + '>' + s.on).join());
+  await press('#stagedRow button:has-text("Send 2 subs in")');
+  st = await page.evaluate(() => ({ subs: S.current.subs.slice(1), staged: S.current.staged.length, field: lineupAt(S.current, 0).filter(Boolean).length }));
+  assert(st.subs.length === 2 && st.subs.every(x => x.t === 180) && st.subs.map(x => x.off + '>' + x.on).join() === readyPairs && st.staged === 0 && st.field === 9,
+    '"Send subs in" makes both at the same time (3:00), each replacing its player');
+  await page.evaluate(() => undoLastChange());
+  assert(await page.evaluate(() => S.current.subs.length === 1 && S.current.staged.length === 2), 'one Undo takes both back, and they are ready again');
+  await page.evaluate(() => { S.current.staged = []; save(); render(); });
 
   // pause and resume
   await page.clock.fastForward('04:30');
-  await press('#liveCard button:has-text("Pause")');
+  await press('#clockCard button:has-text("Pause")');
   await page.clock.fastForward('01:00');
   assert(await page.evaluate(() => clockElapsed(S.current, 0)) === 450, 'Pause stops the clock at 7:30');
-  await press('#liveCard button:has-text("Resume")');
+  await press('#clockCard button:has-text("Resume")');
   await page.clock.fastForward('07:30');
-  await press('#liveCard button:has-text("End Q1")');
+  await press('#clockCard button:has-text("End Q1")');
   st = await page.evaluate(id => ({ secs: S.current.periodSecs[0], sec: periodSeconds(S.current, 0), off: S.current.subs[0].off, on: S.current.subs[0].on, share: gameQtrs(S.current) }), scorer);
   assert(st.secs === 900, 'End Q1 records how long it ran (15:00): ' + st.secs);
   assert(st.sec[st.off] === 180 && st.sec[st.on] === 720 && Object.keys(st.sec).length === 10, 'Q1 minutes: 3:00 for the player who came off, 12:00 for the one who came on, 15:00 for the rest');
   assert(st.share[st.off] >= 0.2 && Math.abs(st.share[st.off] % 1 - 0.2) < 0.01, 'playing time counts part of a quarter: 0.2 of Q1 for 3 minutes');
-  assert(await page.isVisible('#liveCard button:has-text("Start Q2")'), 'after Q1 ends, Start Q2 is offered');
+  assert(await page.isVisible('#clockCard button:has-text("Start Q2")'), 'after Q1 ends, Start Q2 is offered');
+  st = await page.evaluate(() => ({ title: document.getElementById('pitchTitle').textContent, hint: document.getElementById('liveHint').hidden }));
+  assert(!/LIVE/.test(st.title) && st.hint, 'once Q1 ends, its pitch is the starting lineup again');
 
   // ---------- planned subs for Q2 ----------
   await page.evaluate(() => { ui.q = 1; render(); });
   const spreadBefore = await page.evaluate(() => { const m = gameQtrs(S.current, true), v = presentRoster(S.current).map(p => m[p.id] || 0); return Math.max(...v) - Math.min(...v); });
   await page.fill('#psMarks', '7:30');
-  await press('#liveCard button:has-text("Suggest subs for Q2")');
+  await press('#subsCard button:has-text("Suggest subs for Q2")');
   st = await page.evaluate(() => {
     const g = S.current, f = qForm(g, 1), start = g.plan[1], m = gameQtrs(g, true), v = presentRoster(g).map(p => m[p.id] || 0);
     return { plan: g.subPlan.map(s => ({ ...s, offSlot: f.pos[start.indexOf(s.off)].z, onStarts: start.indexOf(s.on) >= 0 })), spread: Math.max(...v) - Math.min(...v),
@@ -103,16 +157,16 @@ function assert(cond, msg) {
   await page.fill('#psTime', '10:00');
   await page.selectOption('#psOff', String(manual.off));
   await page.selectOption('#psOn', String(manual.on));
-  await press('#liveCard button:has-text("Add")');
+  await press('#subsCard button:has-text("Add")');
   assert(await page.evaluate(m => S.current.subPlan.some(s => s.t === 600 && s.off === m.off && s.on === m.on), manual), 'a sub can be planned by hand: at 10:00, who off and who on');
   assert(/Subs:.*7:30/.test(await page.evaluate(() => document.getElementById('printSheet').textContent)), 'print-outs list the planned subs for the quarter');
 
   // play Q2: planned subs come due
-  await press('#liveCard button:has-text("Start Q2")');
+  await press('#clockCard button:has-text("Start Q2")');
   await page.clock.fastForward('07:31');
   st = await page.evaluate(() => ({ due: document.querySelectorAll('#plannedSubs .plansub.due').length, banner: document.getElementById('subDueText').textContent, hidden: document.getElementById('subDue').hidden, all: !document.getElementById('subDueAll').hidden }));
-  assert(st.due >= 1 && !st.hidden && /^Subs? due:/.test(st.banner) && st.all === (st.due > 1), 'at 7:30 the planned subs are marked due: ' + st.banner);
-  if (shots) await page.locator('#liveCard').screenshot({ path: path.join(shots, (setup.iphone ? 'iphone-' : '') + 'clock.png') });
+  assert(st.due >= 1 && !st.hidden && /^Subs? due:/.test(st.banner) && st.all, 'at 7:30 the planned subs are marked due, above the pitch: ' + st.banner);
+  if (shots) await page.locator('#plan').screenshot({ path: path.join(shots, (setup.iphone ? 'iphone-' : '') + 'clock.png') });
   await press('#plannedSubs .plansub.due button:has-text("Sub now")');
   st = await page.evaluate(() => ({ subs: S.current.subs.filter(s => s.q === 1), done: S.current.subPlan.filter(s => s.done).length }));
   assert(st.subs.length === 1 && st.subs[0].t === 451 && st.done === 1, '"Sub now" makes the planned sub at the clock\'s time (7:31)');
@@ -128,21 +182,22 @@ function assert(cond, msg) {
     await page.evaluate(() => undoLastChange());
     assert(await page.evaluate(() => S.current.subs.filter(s => s.q === 1).length) === 0, 'one Undo takes all of them back');
   }
-  await press('#liveCard button:has-text("End Q2")');
+  await press('#clockCard button:has-text("End Q2")');
 
   // ---------- Q3 without the clock: played as planned ----------
   await page.evaluate(() => { ui.q = 2; ui.ps = {}; render(); });
-  await press('#liveCard button:has-text("Suggest subs for Q3")');
+  await press('#subsCard button:has-text("Suggest subs for Q3")');
   const planned3 = await page.evaluate(() => S.current.subPlan.filter(s => s.q === 2).length);
-  await press('#liveCard button:has-text("Q3 was played as planned")');
+  await press('#subsCard button:has-text("Q3 was played as planned")');
   st = await page.evaluate(() => ({ subs: S.current.subs.filter(s => s.q === 2).map(s => s.t), pending: pendingPlanned(S.current, 2).length }));
   assert(planned3 >= 1 && st.subs.length === planned3 && st.subs.every(t => t === 450) && st.pending === 0, '"played as planned" makes Q3\'s ' + planned3 + ' planned sub(s) at their planned time');
 
   // ---------- Q4: a sub logged afterwards asks when ----------
   await page.evaluate(() => { ui.q = 3; render(); });
   dialogs.length = 0;
-  await press('#liveCard .livefield button:nth-child(3)');
-  await press('#liveCard .livebench button:nth-child(1)');
+  await press('#subsCard details.logsub summary');
+  await press('#subsCard .livefield button:nth-child(3)');
+  await press('#subsCard .livebench button:nth-child(1)');
   st = await page.evaluate(() => S.current.subs.filter(s => s.q === 3));
   assert(dialogs.some(m => /When was .* coming on for/.test(m)) && st.length === 1 && st[0].t === 450, 'with no clock for Q4, a sub asks when (default 7:30)');
   await page.evaluate(() => { window.prompt = () => '9:15'; setSubTime(S.current.subs.findIndex(s => s.q === 3)); });
@@ -164,7 +219,7 @@ function assert(cond, msg) {
   st = await page.evaluate(() => { showTab('stats'); return { inQ: [0, 1, 2, 3].map(q => oppGoalsIn(S.games[0], q)).join(), text: document.getElementById('trends').textContent }; });
   assert(st.inQ === '0,0,0,0' && !/come from/.test(st.text), 'a shutout entered as a total counts as 0 allowed in every quarter in Trends');
   st = await page.evaluate(() => { setTrendQ(2); return document.querySelector('#trends .qgames').textContent; });
-  assert(/Subs\s*7:30 \w+ for \w+/.test(st), 'the closer look lists a quarter\'s subs under its starting lineup');
+  assert(/Subs\s*7:30 \w+ on for \w+/.test(st), 'the closer look lists a quarter\'s subs under its starting lineup');
 
   assert(errors.length === 0, 'no errors in the page' + (errors.length ? ': ' + errors.join(' | ') : ''));
   await browser.close();

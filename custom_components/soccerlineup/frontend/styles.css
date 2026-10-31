@@ -213,6 +213,26 @@ input[readonly]{background:#F3F4F1;color:var(--ink-soft)}
 .trendchart .bar:hover path,.trendchart .bar:focus path{filter:brightness(.9)}
 .trendchart .bar:focus{outline:none}
 /* clock and subs */
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:40;max-height:65vh;overflow:auto;background:#fff;border-top:3px solid var(--short);
+  box-shadow:0 -8px 24px rgba(0,0,0,.18);padding:12px 16px calc(16px + env(safe-area-inset-bottom));border-radius:14px 14px 0 0}
+.sheet[hidden]{display:none}
+.sheet h3{font-size:16px;color:var(--ink);margin:0 0 10px}
+.pickgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:10px}
+.pickgrid .btn{justify-content:flex-start;min-height:48px;font-size:16px}
+.pickgrid .n{font-size:11px;font-weight:800;color:var(--pitch);margin-right:4px}
+.stagedrow{margin:0 -6px 8px;padding:6px;gap:8px;align-items:center;position:sticky;top:56px;z-index:15;background:var(--chalk);border-radius:10px;box-shadow:0 4px 10px rgba(0,0,0,.08)}
+.stagedrow[hidden]{display:none}
+.staged{flex:1;min-width:200px;font-size:14px}
+.stagedpair{display:inline-block;background:#FCEFE3;border:1px solid var(--short);border-radius:12px;padding:2px 8px;margin:2px 4px 2px 0}
+.sendsubs{font-size:17px;min-height:48px}
+.slotbox.staged{stroke:var(--short) !important;stroke-width:3;stroke-dasharray:5 3}
+.chip.staged{border-color:var(--short);background:#FCEFE3}
+.livetag{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:10px;background:var(--short);color:#fff;font-size:12px;font-weight:800;letter-spacing:.03em;vertical-align:middle;font-variant-numeric:tabular-nums}
+.pitch.live .slotbox{stroke:var(--short)}
+.livehint{margin:0 0 8px;color:var(--short);font-weight:700}
+details.logsub{margin:6px 0}
+details.logsub summary{cursor:pointer;font-size:14px;font-weight:700;color:var(--pitch)}
+.tag.kind{background:#E8EEF8;color:#22457A}
 .clockrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:6px 0}
 .clocktime{font-size:34px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em;min-width:96px}
 .clocktime.over{color:var(--short)}
@@ -284,6 +304,6 @@ input[readonly]{background:#F3F4F1;color:var(--ink-soft)}
 @media print{
   @page{margin:8mm;size:landscape}
   body{background:#fff;padding:0;font-size:10pt}
-  .topbar,main,.toast{display:none !important}
+  .topbar,main,.toast,.sheet{display:none !important}
   #printSheet{display:block !important}
 }

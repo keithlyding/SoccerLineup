@@ -113,10 +113,19 @@ viewing.
   every device sees the same clock. While it runs the phone's screen stays on
   where the phone allows it. If you forget to end a quarter, **Ran 16:40 ·
   change** fixes its length.
-- **Subs:** tap a player on the field and one on the bench (either order). The
-  sub is kept with the clock's time and the player coming on takes the same
-  spot. Without the clock running, it asks when. Each sub's time can be
-  changed, and Undo takes it back.
+- **Subs while the quarter is live** (its clock running or paused): the pitch
+  shows who's on the field now, marked LIVE with the time.
+  - **Get subs ready, then send them in together:** tap a player on the field
+    and choose who goes in from the bench list (or tap a bench player and
+    choose who comes out). Each pair waits under **Ready** and is marked on
+    the pitch; **Send subs in** makes them all at once at the clock's time.
+    The Ready bar stays at the top of the screen while you scroll.
+  - **Or drag** a bench player onto a spot to sub right away; drag between
+    spots to switch two players' positions.
+  - Undo takes a change back. The starting lineup, formation and auto-fill
+    are locked while the quarter is live.
+- **Subs made without the clock:** **Log a sub made without the clock** (under
+  the pitch) asks when it happened. Each sub's time can be changed later.
 - **Planned subs:** add one (when, who off, who on), or **Suggest subs** at
   the times you give (7:30 for 15-minute quarters; 10:00 and 20:00 for
   30-minute halves). Suggestions even out playing time across the game:
@@ -134,6 +143,16 @@ counts part of a quarter for coming on or going off partway: 3 minutes of a
 minutes actually played. Positions and Trends count everyone who played in a
 quarter, and the closer look at one quarter lists its subs.
 
+## Game types and records
+
+Each game is **League** (the default), **Playoff / tournament** or
+**Scrimmage** (the Game type menu next to the date). The record leaves
+scrimmages out; playoff and tournament games count in it and also have their
+own record. The record is in the top bar on every tab (for example
+`3-1-0 · Playoffs 1-0-0`), and the Season tab spells out all three. Trends
+leave scrimmages out unless you tick them. Playing time counts every game,
+scrimmages included.
+
 ## Seasons
 
 When a season is over, **Season, Start a new season** puts its played games
@@ -149,6 +168,12 @@ renamed or deleted but not edited. **Add it as a past season** adds the
 season in a backup file (and any past seasons it had) without changing
 anything else: useful for backups from before this feature. Backups include
 the past seasons.
+
+**Head coach records.** Setup has a **Head coach** name, kept with each
+season (a past season's can be set with its **Head coach** button). Stats,
+**Head coach records**, adds up each coach's record over every season, with
+playoffs and tournaments, goals for and against, and a season-by-season
+list.
 
 ## Age groups and formations
 

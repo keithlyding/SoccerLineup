@@ -54,12 +54,40 @@ function assert(cond, msg) {
   let st = await page.evaluate(() => ({ played: playedGames().length, planned: S.games.filter(g => g.planned).length }));
   assert(st.played === 3 && st.planned === 1, 'a season of 3 played games and 1 planned');
 
+  // ---------- game types and records ----------
+  await page.evaluate(() => {
+    // a playoff win and a scrimmage loss, then a head coach
+    [['2026-10-10', 'Tigers', 'playoff', 2, 1], ['2026-10-11', 'Practice FC', 'scrimmage', 0, 4]].forEach(x => {
+      showTab('plan'); S.current.date = x[0]; S.current.opp = x[1]; autoFillAll();
+      const f = qForm(S.current, 0), st = S.current.plan[0][f.pos.findIndex(p => p.k === 'ST')];
+      for (let k = 0; k < x[3]; k++) bumpGoal(st, 0, 1);
+      setOpponentGoals(String(x[4]));
+      document.getElementById('fKind').value = x[2]; setGameKind(x[2]);
+      archiveGame();
+    });
+    showTab('setup'); document.getElementById('cfgCoach').value = 'Keith'; saveCfg(); showTab('season');
+  });
+  st = await page.evaluate(() => ({ meta: document.getElementById('seasonMeta').textContent, brand: document.getElementById('brandSub').textContent,
+    tags: Array.from(document.querySelectorAll('#gameList .tag.kind')).map(t => t.textContent) }));
+  assert(/^Record: 3-1-0 \(W-L-T\)\. Playoffs and tournaments: 1-0-0\. Scrimmages \(not counted\): 0-1-0/.test(st.meta),
+    'the record leaves the scrimmage out (3-1-0), with playoffs and tournaments on their own (1-0-0): ' + st.meta.slice(0, 90));
+  assert(st.brand === '3-1-0 \u00b7 Playoffs 1-0-0', 'the record is posted in the top bar on every tab: ' + st.brand);
+  assert(st.tags.join() === 'Playoff / tournament,Scrimmage', 'the games list tags playoff and scrimmage games');
+  st = await page.evaluate(() => { showTab('stats'); return { sum: document.querySelector('#trends .trendsum').textContent, kinds: Array.from(document.querySelectorAll('#trends .trendfilters .gamepick')).map(l => l.textContent.trim() + ':' + l.querySelector('input').checked) }; });
+  assert(/^4 games: 3-1-0/.test(st.sum) && st.kinds.join() === 'League:true,Playoff / tournament:true,Scrimmage:false', 'Trends leaves scrimmages out unless ticked: ' + st.kinds.join());
+  await page.evaluate(() => setTrendKind('scrimmage', true));
+  assert(/^5 games: 3-1-0/.test(await page.textContent('#trends .trendsum')), 'ticking Scrimmage adds its goals to Trends, still not to the record');
+  await page.evaluate(() => setTrendKind('scrimmage', false));
+  st = await page.evaluate(() => ({ played: playedGames().length, planned: S.games.filter(g => g.planned).length }));
+  assert(st.played === 5, 'five played games in all');
+  await page.evaluate(() => showTab('season'));
+
   // ---------- start a new season ----------
   dialogs.length = 0;
   await press('button:has-text("Start a new season")');
   st = await page.evaluate(() => ({ seasons: S.seasons.map(s => s.name + ':' + s.games.length + ':' + s.from + '>' + s.to), games: S.games.map(g => g.opp), roster: S.roster.length, tab: ui.tab }));
-  assert(dialogs.some(m => /Name for the season/.test(m)) && st.seasons.join() === 'Fall 2026:3:2026-09-12>2026-10-03',
-    'it asks for a name (suggesting "Fall 2026") and puts the 3 played games away: ' + st.seasons.join());
+  assert(dialogs.some(m => /Name for the season/.test(m)) && st.seasons.join() === 'Fall 2026:5:2026-09-12>2026-10-11',
+    'it asks for a name (suggesting "Fall 2026") and puts the 5 played games away: ' + st.seasons.join());
   assert(st.games.join() === 'Future FC' && st.roster === 12, 'the planned game and the roster stay for the new season');
   assert(st.tab === 'setup' && dialogs.some(m => /get the roster ready/.test(m)), 'it goes to Setup to get the roster ready');
 
@@ -73,8 +101,8 @@ function assert(cond, msg) {
   // ---------- look back at it on Stats ----------
   await press('#tab-stats');
   const opts = await page.$$eval('#seasonPick option', os => os.map(o => o.textContent));
-  assert(opts.join('|') === 'This season (0 games)|Fall 2026 (2-1-0)', 'Stats has a Season menu: this season and Fall 2026 (2-1-0)');
-  await page.selectOption('#seasonPick', { label: 'Fall 2026 (2-1-0)' });
+  assert(opts.join('|') === 'This season (0 games)|Fall 2026 (3-1-0)', 'Stats has a Season menu: this season and Fall 2026 (3-1-0)');
+  await page.selectOption('#seasonPick', { label: 'Fall 2026 (3-1-0)' });
   st = await page.evaluate(() => ({
     sum: document.querySelector('#pastSeason .trendsum').textContent,
     players: Array.from(document.querySelectorAll('#pastSeason .scrollx')[0].querySelectorAll('tbody tr')).map(r => r.cells[0].textContent),
@@ -85,11 +113,11 @@ function assert(cond, msg) {
     open: document.querySelectorAll('#trends .qgame button').length,
     actions: !document.getElementById('seasonActions').hidden
   }));
-  assert(/Fall 2026.*Panthers, 9v9, 4 × 15 min.*2026-09-12 to 2026-10-03.*Record 2-1-0.*scored 5, allowed 3/.test(st.sum), 'Fall 2026\'s summary: team, format, dates, record and goals: ' + st.sum);
+  assert(/Fall 2026.*Panthers \(head coach Keith\), 9v9, 4 × 15 min.*2026-09-12 to 2026-10-11.*Record: 3-1-0 \(W-L-T\)\. Playoffs and tournaments: 1-0-0.*Scored 7, allowed 4/.test(st.sum), 'Fall 2026\'s summary: team, coach, format, dates, records and goals: ' + st.sum);
   assert(st.players.length === 12 && st.players.some(n => /^Lu/.test(n)) && !st.players.some(n => /^Max/.test(n)), 'its players are the ones who played then (Lu yes, Max no)');
   assert(st.roster.some(r => r === 'Kim Defense') && st.roster.length === 12, 'its roster shows positions as they were then (Kim: Defense)');
-  assert(st.games.length === 3 && /Notes for Schoenrock/.test(st.games.join()), 'its games are listed with scores and notes');
-  assert(/3 games: 2-1-0/.test(st.trends) && st.positions === 12, 'Trends and Positions played show Fall 2026');
+  assert(st.games.length === 5 && /Notes for Schoenrock/.test(st.games.join()), 'its games are listed with scores, notes and game types');
+  assert(/4 games: 3-1-0/.test(st.trends) && st.positions === 12, 'Trends and Positions played show Fall 2026');
   assert(st.open === 0 && st.actions, 'a past season can\'t be edited from here (no Open buttons), and has Rename and Delete');
   if (shots) await page.locator('#stats').screenshot({ path: path.join(shots, (setup.iphone ? 'iphone-' : '') + 'past-season.png') });
 
@@ -111,7 +139,7 @@ function assert(cond, msg) {
 
   // ---------- kept after reloading ----------
   await page.reload();
-  assert(await page.evaluate(() => S.seasons.length === 1 && S.seasons[0].games.length === 3 && S.seasons[0].roster.length === 12), 'past seasons are kept after reopening the app');
+  assert(await page.evaluate(() => S.seasons.length === 1 && S.seasons[0].games.length === 5 && S.seasons[0].roster.length === 12), 'past seasons are kept after reopening the app');
 
   // ---------- add seasons from a backup file ----------
   const backup = await page.evaluate(() => {
@@ -125,11 +153,25 @@ function assert(cond, msg) {
   await page.setInputFiles('#seasonFile', { name: 'old.json', mimeType: 'application/json', buffer: Buffer.from(backup) });
   await page.waitForFunction(() => S.seasons.length === 3);
   st = await page.evaluate(() => ({ names: S.seasons.map(s => s.name + ':' + s.games.length), ids: S.seasons.map(s => s.id), now: JSON.stringify({ roster: S.roster, games: S.games, cfg: S.cfg, current: S.current }), pick: ui.season }));
-  assert(st.names.join() === 'Fall 2026 U10:3,Fall 2024:1,Spring 2025:3' && new Set(st.ids).size === 3,
+  assert(st.names.join() === 'Fall 2026 U10:5,Fall 2024:1,Spring 2025:5' && new Set(st.ids).size === 3,
     'a backup file adds its own past seasons and its season (named "Spring 2025") as past seasons: ' + st.names.join());
   assert(st.now === before, 'adding seasons from a file changes nothing else');
   const optsNow = await page.$$eval('#seasonPick option', os => os.map(o => o.textContent));
   assert(optsNow[0].startsWith('This season') && optsNow.length === 4, 'the menu lists all three past seasons, newest first: ' + optsNow.join(' | '));
+
+  // ---------- head coach records across seasons ----------
+  await page.evaluate(() => { showTab('stats'); });
+  st = await page.evaluate(() => ({ coaches: Array.from(document.querySelectorAll('#coachRecords table')[0].querySelectorAll('tbody tr')).map(r => Array.from(r.cells).map(c => c.textContent).join('|')),
+    seasons: Array.from(document.querySelectorAll('#coachRecords table')[1].querySelectorAll('tbody tr')).map(r => Array.from(r.cells).map(c => c.textContent).join('|')) }));
+  // Fall 2024 is one game of Fall 2026 (a 3-1 win); Spring 2025 and Fall 2026 U10 are 3-1-0 each
+  assert(st.coaches.join(' / ') === 'Keith|3|7-2-0|2-0-0|17|9', 'Keith\'s record over all three seasons: 7-2-0, playoffs 2-0-0: ' + st.coaches.join(' / '));
+  assert(st.seasons.length === 3 && st.seasons[0].startsWith('Fall 2024|Keith|1-0-0'), 'each season is listed with its coach and record: ' + st.seasons.join(' / '));
+  await page.selectOption('#seasonPick', { label: (await page.$$eval('#seasonPick option', os => os.map(o => o.textContent))).find(o => o.startsWith('Spring 2025')) });
+  promptAnswer = 'Assistant Sam';
+  await press('#seasonActions button:has-text("Head coach")');
+  promptAnswer = null;
+  st = await page.evaluate(() => Array.from(document.querySelectorAll('#coachRecords table')[0].querySelectorAll('tbody tr')).map(r => r.cells[0].textContent + ' ' + r.cells[1].textContent + ' ' + r.cells[2].textContent));
+  assert(st.join(' / ') === 'Keith 2 4-1-0 / Assistant Sam 1 3-1-0', 'a past season\'s head coach can be set, and each coach gets their own cumulative record: ' + st.join(' / '));
 
   // ---------- delete ----------
   await page.evaluate(() => showTab('stats'));
