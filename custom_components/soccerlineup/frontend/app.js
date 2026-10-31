@@ -2569,9 +2569,13 @@ function saveCfg(){
   if(ui.q>lastQ()){ ui.q=lastQ(); }
   save(); render();
 }
-function backupFileName(){
-  var team=(S.cfg.team||"Team").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
-  return (team||"Team")+"-SoccerLineup-backup-"+todayISO()+".json";
+/* withTime: add the time (downloads); "plain": no date (the one file
+   that each backup replaces) */
+function backupFileName(withTime){
+  var team=(S.cfg.team||"Team").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-+|-+$/g,""), d=new Date(), t="";
+  if(withTime==="plain"){ return (team||"Team")+"-SoccerLineup-backup.json"; }
+  if(withTime){ t="-"+("0"+d.getHours()).slice(-2)+("0"+d.getMinutes()).slice(-2); }
+  return (team||"Team")+"-SoccerLineup-backup-"+todayISO()+t+".json";
 }
 function backupText(stamp){
   var backup=JSON.parse(JSON.stringify(S));
@@ -2589,15 +2593,105 @@ function shareableBackup(text){
     if(!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches)){ return null; }
     var types=["application/json","text/plain"], i, file;
     for(i=0;i<types.length;i++){
-      file=new File([text], backupFileName(), {type:types[i]});
+      file=new File([text], backupFileName(false), {type:types[i]});
       if(navigator.canShare({files:[file]})){ return file; }
     }
   }catch(e){}
   return null;
 }
 function usesShareSheet(){ return !!shareableBackup("{}"); }
+/* ---------- saving a backup straight to a file ----------
+   A download that replaces a file with the same name can stall at 100% on
+   Windows (the finished file is checked, or another program or a sync
+   folder holds the old one), and stalled downloads can lock up the browser.
+   Where the browser lets a page write a file itself (Chrome and Edge on a
+   computer, from an https:// address), "Save backup" asks where once and
+   then writes that file directly each time, replacing it: no download.
+   Elsewhere the backup downloads with the time in its name, so a download
+   never has to replace an earlier one. */
+var backupHandle=null, backupHandleLoaded=false;
+function canSaveToFile(){
+  try{ return typeof window.showSaveFilePicker==="function" && window.isSecureContext && !usesShareSheet(); }
+  catch(e){ return false; }
+}
+/* the chosen file is remembered on this device (IndexedDB) */
+function handleStore(write, value){
+  return new Promise(function(resolve){
+    try{
+      var req=indexedDB.open("soccerlineup-files",1);
+      req.onupgradeneeded=function(){ req.result.createObjectStore("handles"); };
+      req.onerror=function(){ resolve(null); };
+      req.onsuccess=function(){
+        try{
+          var db=req.result, tx=db.transaction("handles", write?"readwrite":"readonly"), st=tx.objectStore("handles");
+          var r=write ? (value?st.put(value,"backup"):st.delete("backup")) : st.get("backup");
+          r.onsuccess=function(){ resolve(write?null:(r.result||null)); };
+          r.onerror=function(){ resolve(null); };
+        }catch(e){ resolve(null); }
+      };
+    }catch(e){ resolve(null); }
+  });
+}
+function loadBackupHandle(){
+  if(backupHandleLoaded){ return Promise.resolve(backupHandle); }
+  return handleStore(false).then(function(h){
+    backupHandleLoaded=true;
+    if(h && !backupHandle){ backupHandle=h; renderBackupStatus(); }
+    return backupHandle;
+  });
+}
+function pickBackupFile(){
+  return window.showSaveFilePicker({
+    suggestedName:backupFileName("plain"),
+    types:[{description:"SoccerLineup backup", accept:{"application/json":[".json"]}}]
+  });
+}
+function mayWrite(h){
+  if(!h.queryPermission){ return Promise.resolve(true); }
+  return h.queryPermission({mode:"readwrite"}).then(function(p){
+    if(p==="granted"){ return true; }
+    return h.requestPermission({mode:"readwrite"}).then(function(q){ return q==="granted"; });
+  });
+}
+/* write the backup to the remembered file (or a newly chosen one) */
+function saveBackupToFile(stamp, text, choose){
+  var start=choose ? Promise.resolve(null) : loadBackupHandle();
+  return start.then(function(h){
+    if(!h){ return pickBackupFile(); }
+    return mayWrite(h).then(function(ok){ return ok ? h : pickBackupFile(); });
+  }).then(function(h){
+    return h.createWritable().then(function(w){
+      return w.write(text).then(function(){ return w.close(); });
+    }).then(function(){
+      backupHandle=h; backupHandleLoaded=true;
+      handleStore(true, h);
+      hideBackupToast();
+      backupSaved(stamp);
+    });
+  }).catch(function(err){
+    if(err && err.name==="AbortError"){ return; }   /* closed the Save dialog */
+    downloadBackup(stamp, text);                       /* anything else: an ordinary download */
+  });
+}
+function chooseBackupFile(){
+  var stamp=new Date().toISOString();
+  saveBackupToFile(stamp, backupText(stamp), true);
+}
+function downloadBackup(stamp, text){
+  var blob=new Blob([text],{type:"application/json"});
+  var a=document.createElement("a"), url=URL.createObjectURL(blob);
+  a.href=url;
+  a.download=backupFileName(true);
+  document.body.appendChild(a);
+  a.click();
+  /* some browsers start the download after click() returns, so release the
+     file a little later rather than immediately */
+  setTimeout(function(){ URL.revokeObjectURL(url); if(a.parentNode){ a.parentNode.removeChild(a); } },4000);
+  backupSaved(stamp);
+}
 function exportData(){
   var stamp=new Date().toISOString(), text=backupText(stamp), file=shareableBackup(text);
+  if(!file && canSaveToFile()){ saveBackupToFile(stamp, text, false); return; }
   if(file){
     navigator.share({files:[file], title:file.name}).then(function(){
       hideBackupToast();
@@ -2609,16 +2703,7 @@ function exportData(){
     });
     return;
   }
-  var blob=new Blob([text],{type:"application/json"});
-  var a=document.createElement("a"), url=URL.createObjectURL(blob);
-  a.href=url;
-  a.download=backupFileName();
-  document.body.appendChild(a);
-  a.click();
-  /* some browsers start the download after click() returns, so release the
-     file a little later rather than immediately */
-  setTimeout(function(){ URL.revokeObjectURL(url); if(a.parentNode){ a.parentNode.removeChild(a); } },4000);
-  backupSaved(stamp);
+  downloadBackup(stamp, text);
 }
 function backupSaved(stamp){
   S.lastBackupAt=stamp;
@@ -2644,9 +2729,18 @@ function setAutoBackup(on){
 function renderBackupStatus(){
   var el=document.getElementById("backupStatus"), box=document.getElementById("cfgAutoBackup");
   if(box){ box.checked=!!S.cfg.autoBackup; }
-  var phone=usesShareSheet(), btn=document.getElementById("backupBtn"), lbl=document.getElementById("autoBackupText");
-  if(btn){ btn.textContent=phone?"Save backup":"Download backup"; }
-  if(lbl){ lbl.textContent=phone?" Offer to save a backup every time I save a game":" Download a backup every time I save a game"; }
+  var phone=usesShareSheet(), toFile=!phone && canSaveToFile(), btn=document.getElementById("backupBtn"), lbl=document.getElementById("autoBackupText");
+  if(toFile && !backupHandleLoaded){ loadBackupHandle(); }
+  if(btn){ btn.textContent=phone?"Save backup":(toFile?(backupHandle?"Save backup to "+backupHandle.name:"Save backup\u2026"):"Download backup"); }
+  var other=document.getElementById("backupOtherBtn");
+  if(other){ other.hidden=!(toFile && backupHandle); }
+  var how=document.getElementById("backupHow");
+  if(how){
+    how.textContent=toFile ? (backupHandle ? "Each backup replaces "+backupHandle.name+" (in the folder you chose). The browser may ask once per visit to allow it." :
+                                             "Choose where to keep the backup file once; after that each backup replaces it, with no download.") :
+                    (phone ? "" : "Each download has the date and time in its name, so it never has to replace an earlier file.");
+  }
+  if(lbl){ lbl.textContent=phone?" Offer to save a backup every time I save a game":(toFile?" Save a backup every time I save a game":" Download a backup every time I save a game"); }
   if(!el){ return; }
   if(HA){ haRenderBackupStatus(el); return; }
   var when=S.lastBackupAt?new Date(S.lastBackupAt):null, stale=false, text;

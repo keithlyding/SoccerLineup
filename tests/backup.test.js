@@ -19,6 +19,7 @@ async function openApp(browser, options, server) {
   const context = await browser.newContext({ ...options, acceptDownloads: true });
   await context.addInitScript(() => {
     window.__shared = []; window.__shareMode = 'ok'; window.__canShareFiles = true;
+    try { delete window.showSaveFilePicker; } catch (e) {}
     Navigator.prototype.canShare = function (d) { return !!(d && d.files && d.files.length) && window.__canShareFiles; };
     Navigator.prototype.share = function (d) {
       window.__shared.push(d);

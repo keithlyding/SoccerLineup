@@ -59,8 +59,15 @@ all: nothing to install, no account, and the season stays in that browser.
 
 **Backups.** Each browser keeps its own copy of the season, so keep backups:
 
-- On a computer, **Season, Download backup** saves a file. By default a
-  backup also downloads every time you save a game.
+- On a computer in Chrome or Edge, from an `https://` address (GitHub Pages,
+  or Home Assistant over https), **Season, Save backup…** asks once where to
+  keep the backup file; after that each backup replaces that file directly,
+  with no download (**Different file…** changes it). The browser may ask once
+  per visit to allow it.
+- Otherwise, **Season, Download backup** downloads a file with the date and
+  time in its name, so a download never has to replace an earlier file:
+  on Windows, a download that replaces a file of the same name can stall at
+  100%. By default a backup is also saved every time you save a game.
 - On a phone, **Season, Save backup** opens the share sheet: choose
   **Save to Files** (or iCloud Drive, AirDrop, email). After you save a game,
   a **Save backup** button offers the same.

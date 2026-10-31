@@ -22,7 +22,7 @@ function assert(cond, msg) {
   const context = await browser.newContext(setup.contextOptions);
   // These checks cover the download path; the phone share-sheet path has
   // its own test (tests/backup.test.js), so take sharing away here.
-  await context.addInitScript(() => { try { delete Navigator.prototype.share; delete Navigator.prototype.canShare; } catch (e) {} });
+  await context.addInitScript(() => { try { delete Navigator.prototype.share; delete Navigator.prototype.canShare; delete window.showSaveFilePicker; } catch (e) {} });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
@@ -150,7 +150,7 @@ function assert(cond, msg) {
   await page.evaluate(() => { S.current.oppGoals = 1; archiveGame(); });
   dl = await dl;
   const backup = JSON.parse(fs.readFileSync(await dl.path(), 'utf8'));
-  assert(/SoccerLineup-backup-\d{4}-\d\d-\d\d\.json$/.test(dl.suggestedFilename()), 'saving a game downloads ' + dl.suggestedFilename());
+  assert(/SoccerLineup-backup-\d{4}-\d\d-\d\d-\d{4}\.json$/.test(dl.suggestedFilename()), 'saving a game downloads ' + dl.suggestedFilename() + ' (date and time, so it never replaces a file)');
   assert(backup.games.length === 1 && backup.games[0].formations.join(',') === '2-3-3,3-2-3,3-2-3,3-2-3', 'the backup holds the saved game and its formations');
   st = await page.evaluate(() => ({ fresh: S.current.formations.slice(), status: document.getElementById('backupStatus').textContent, cls: document.getElementById('backupStatus').className, box: document.getElementById('cfgAutoBackup').checked }));
   assert(st.fresh.every(f => f === '3-3-2'), 'the next game starts from the default formation');

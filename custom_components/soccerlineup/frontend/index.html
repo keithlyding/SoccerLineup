@@ -180,10 +180,12 @@
     <h2>Backup and transfer</h2>
     <div class="row">
       <button class="btn" id="backupBtn" onclick="exportData()">Download backup</button>
+      <button class="btn quiet" id="backupOtherBtn" onclick="chooseBackupFile()" hidden>Different file&hellip;</button>
       <button class="btn" onclick="document.getElementById('importFile').click()">Restore from backup</button>
       <input type="file" id="importFile" accept=".json,application/json,text/plain" hidden onchange="importData(event)">
     </div>
     <label class="check" id="autoBackupRow"><input type="checkbox" id="cfgAutoBackup" onchange="setAutoBackup(this.checked)"><span id="autoBackupText"> Download a backup every time I save a game</span></label>
+    <p class="hint" id="backupHow"></p>
     <p class="hint" id="backupStatus"></p>
     <div id="haHistory" hidden>
       <h3 style="margin-top:12px">Earlier versions on Home Assistant</h3>
